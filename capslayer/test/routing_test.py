@@ -1,9 +1,7 @@
 import tensorflow as tf
 import numpy as np
-import ops
 
-
-
+from capslayer import ops
 
 
 class RoutingTest(tf.test.TestCase):
