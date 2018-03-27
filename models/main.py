@@ -7,7 +7,7 @@ from tqdm import tqdm
 sys.path.append('..')
 sys.path.append('.')
 
-from config import cfg
+from models.config import cfg
 from capslayer.utils import load_data
 
 

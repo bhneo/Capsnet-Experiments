@@ -69,7 +69,8 @@ def fully_connected(inputs, activation,
             activation = tf.squeeze(euclidean_norm(pose))
     return(pose, activation)
 
-def fully_connected_caps_layer_(input_layer, capsules_size, nb_capsules, iterations=4):
+
+def fully_connected_caps_layer_thibo(input_layer, capsules_size, nb_capsules, iterations=4):
     """
         Second layer receiving inputs from all capsules of the layer below
             **input:
