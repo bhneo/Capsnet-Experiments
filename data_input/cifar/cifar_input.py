@@ -103,11 +103,6 @@ def read_cifar10(filename_queue, coarse_or_fine=None):
       uint8image: a [height, width, depth] uint8 Tensor with the image data
   """
 
-    class CIFAR10Record(object):
-        pass
-
-    result = CIFAR10Record()
-
     # Dimensions of the images in the CIFAR-10 dataset.
     # See http://www.cs.toronto.edu/~kriz/cifar.html for a description of the
     # input format.
@@ -119,13 +114,12 @@ def read_cifar10(filename_queue, coarse_or_fine=None):
 
     # 类型标签字节数
     label_bytes = 1  # 2 for CIFAR-100
-
-    result.height = 32
-    result.width = 32
-    result.depth = 3
+    height = 32
+    width = 32
+    depth = 3
 
     # 图像字节数
-    image_bytes = result.height * result.width * result.depth
+    image_bytes = height * width * depth
     # Every record consists of a label followed by the image, with a
     # fixed number of bytes for each.
     # 每一条样本记录由 标签 + 图像 组成，其字节数是固定的。
@@ -139,30 +133,29 @@ def read_cifar10(filename_queue, coarse_or_fine=None):
     reader = tf.FixedLengthRecordReader(record_bytes=record_bytes, header_bytes=0, footer_bytes=0)
 
     # 调用读取器对象的read 方法返回一条记录
-    result.key, value = reader.read(filename_queue)
+    _, byte_data = reader.read(filename_queue)
 
     # Convert from a string to a vector of uint8 that is record_bytes long.
     # 将一个字节组成的string类型的记录转换为长度为record_bytes，类型为unit8的一个数字向量
-    record_bytes = tf.decode_raw(value, tf.uint8)
+    uint_data = tf.decode_raw(byte_data, tf.uint8)
 
     # The first bytes represent the label, which we convert from uint8->int32.
     # 将一个字节代表了标签，我们把它从unit8转换为int32.
-    result.label = tf.cast(
-        tf.strided_slice(record_bytes, [0], [label_bytes]), tf.int32)
+    label = tf.cast(tf.strided_slice(uint_data, [0], [label_bytes]), tf.int32)
+    label.set_shape([1])
 
     # The remaining bytes after the label represent the image, which we reshape
     # from [depth * height * width] to [depth, height, width].
     # 剩余的所有字节都是图像数据，把他从unit8转换为int32
     # 转为三维张量[depth，height，width]
     depth_major = tf.reshape(
-        tf.strided_slice(record_bytes, [label_bytes],
-                         [label_bytes + image_bytes]),
-        [result.depth, result.height, result.width])
+        tf.strided_slice(uint_data, [label_bytes], [record_bytes]),
+        [depth, height, width])
     # Convert from [depth, height, width] to [height, width, depth].
     # 把图像的空间位置和深度位置顺序由[depth, height, width] 转换成[height, width, depth]
-    result.uint8image = tf.transpose(depth_major, [1, 2, 0])
+    image = tf.cast(tf.transpose(depth_major, [1, 2, 0]), tf.float32)
 
-    return result
+    return image, label
 
 
 def read_cifar100(filename_queue, coarse_or_fine='fine'):
@@ -316,10 +309,7 @@ def distorted_inputs(cifar10or20or100, data_dir, batch_size):
     filename_queue = tf.train.string_input_producer(filenames)
 
     # 从文件名队列的文件中读取样本
-    read_input = read_cifar(filename_queue)
-
-    # 将无符号8位图像数据转换成float32位
-    casted_image = tf.cast(read_input.uint8image, tf.float32)
+    casted_image, label = read_cifar(filename_queue)
 
     # 要生成的目标图像的大小，在这里与原图像的尺寸保持一致
     height = IMAGE_SIZE
@@ -346,7 +336,6 @@ def distorted_inputs(cifar10or20or100, data_dir, batch_size):
 
     # 设置张量的形状
     float_image.set_shape([height, width, 3])
-    read_input.label.set_shape([1])
 
     # 确保： the random shuffling has good mixing properties.
     min_fraction_of_examples_in_queue = 0.4
@@ -356,7 +345,7 @@ def distorted_inputs(cifar10or20or100, data_dir, batch_size):
           'This will take a few minutes.' % min_queue_examples)
 
     # Generate a batch of images and labels by building up a queue of examples.
-    return _generate_image_and_label_batch(float_image, read_input.label,
+    return _generate_image_and_label_batch(float_image, label,
                                            min_queue_examples, batch_size,
                                            shuffle=True)
 
@@ -408,9 +397,7 @@ def inputs(cifar10or20or100, eval_data, data_dir, batch_size):
     filename_queue = tf.train.string_input_producer(filenames)
 
     # 从文件名队列的文件中读取样本
-    read_input = read_cifar(filename_queue, coarse_or_fine=coarse_or_fine)
-    # 将无符号8位图像数据转换成float32位
-    casted_image = tf.cast(read_input.uint8image, tf.float32)
+    casted_image, label = read_cifar(filename_queue, coarse_or_fine=coarse_or_fine)
 
     # 要生成的目标图像的大小，在这里与原图像的尺寸保持一致
     height = IMAGE_SIZE
@@ -425,7 +412,6 @@ def inputs(cifar10or20or100, eval_data, data_dir, batch_size):
 
     # 设置数据集中张量的形状
     float_image.set_shape([height, width, 3])
-    read_input.label.set_shape([1])
 
     # Ensure that the random shuffling has good mixing properties.
     min_fraction_of_examples_in_queue = 0.4
@@ -434,6 +420,6 @@ def inputs(cifar10or20or100, eval_data, data_dir, batch_size):
 
     # Generate a batch of images and labels by building up a queue of examples.
     # 通过构造样本队列(a queue of examples)产生一个批次的图像和标签
-    return _generate_image_and_label_batch(float_image, read_input.label,
+    return _generate_image_and_label_batch(float_image, label,
                                            min_queue_examples, batch_size,
                                            shuffle=False)
