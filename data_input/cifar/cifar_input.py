@@ -23,9 +23,6 @@ import os
 
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
-import sys
-from six.moves import urllib
-import tarfile
 
 # Process images of this size. Note that this differs from the original CIFAR
 # image size of 32 x 32. If one alters this number, then the entire model
@@ -43,42 +40,6 @@ NUM_CLASSES_CIFAR20 = 20
 NUM_CLASSES_CIFAR100 = 100
 NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN = 50000
 NUM_EXAMPLES_PER_EPOCH_FOR_EVAL = 10000
-
-print('...cifar_input...')
-
-# 从网址下载数据集存放到data_dir指定的目录下
-CIFAR10_DATA_URL = 'http://www.cs.toronto.edu/~kriz/cifar-10-binary.tar.gz'
-CIFAR100_DATA_URL = 'http://www.cs.toronto.edu/~kriz/cifar-100-binary.tar.gz'
-
-
-# 从网址下载数据集存放到data_dir指定的目录中
-def maybe_download_and_extract(data_dir, data_url=CIFAR10_DATA_URL):
-    """下载并解压缩数据集 from Alex's website."""
-    dest_directory = data_dir  # '../CIFAR10_dataset'
-    DATA_URL = data_url
-    if not os.path.exists(dest_directory):
-        os.makedirs(dest_directory)
-    filename = DATA_URL.split('/')[-1]  # 'cifar-10-binary.tar.gz'
-    filepath = os.path.join(dest_directory, filename)  # '../CIFAR10_dataset\\cifar-10-binary.tar.gz'
-    if not os.path.exists(filepath):
-        def _progress(count, block_size, total_size):
-            sys.stdout.write('\r>> Downloading %s %.1f%%' % (filename,
-                                                             float(count * block_size) / float(total_size) * 100.0))
-            sys.stdout.flush()
-
-        filepath, _ = urllib.request.urlretrieve(DATA_URL, filepath, _progress)
-        print()
-        statinfo = os.stat(filepath)
-        print('Successfully downloaded', filename, statinfo.st_size, 'bytes.')
-
-    # if data_url== CIFAR10_DATA_URL:
-    #     extracted_dir_path = os.path.join(dest_directory,'cifar-10-batches-bin')  # '../CIFAR10_dataset\\cifar-10-batches-bin'
-    # else :
-    #     extracted_dir_path = os.path.join(dest_directory, 'cifar-100-binary')  # '../CIFAR10_dataset\\cifar-10-batches-bin'
-    # if not os.path.exists(extracted_dir_path):
-    #     tarfile.open(filepath, 'r:gz').extractall(dest_directory)
-
-    tarfile.open(filepath, 'r:gz').extractall(dest_directory)
 
 
 def read_cifar10(filename_queue, coarse_or_fine=None):
@@ -230,7 +191,7 @@ def read_cifar100(filename_queue, coarse_or_fine='fine'):
 
 
 def _generate_image_and_label_batch(image, label, min_queue_examples,
-                                    batch_size, shuffle):
+                                    batch_size, height, shuffle, channels_last=True):
     """Construct a queued batch of images and labels.
 
   Args:
@@ -247,112 +208,75 @@ def _generate_image_and_label_batch(image, label, min_queue_examples,
   """
     # Create a queue that shuffles the examples, and then
     # read 'batch_size' images + labels from the example queue.
-    num_preprocess_threads = 16
+    if not channels_last:
+        image = tf.transpose(image, [2, 0, 1])
+    features = {
+        'images': image,
+        'labels': tf.one_hot(label, 10),
+        'recons_image': image,
+        'recons_label': label,
+    }
+
     if shuffle:
-        images, label_batch = tf.train.shuffle_batch(
-            [image, label],
+        batched_features = tf.train.shuffle_batch(
+            features,
             batch_size=batch_size,
-            num_threads=num_preprocess_threads,
+            num_threads=16,
             capacity=min_queue_examples + 3 * batch_size,
             min_after_dequeue=min_queue_examples)
     else:
-        images, label_batch = tf.train.batch(
-            [image, label],
+        batched_features = tf.train.batch(
+            features,
             batch_size=batch_size,
-            num_threads=num_preprocess_threads,
+            num_threads=1,
             capacity=min_queue_examples + 3 * batch_size)
 
+    batched_features['labels'] = tf.reshape(batched_features['labels'],
+                                            [batch_size, 10])
+    batched_features['recons_label'] = tf.reshape(
+        batched_features['recons_label'], [batch_size])
+    batched_features['height'] = height
+    batched_features['depth'] = 3
+    batched_features['num_targets'] = 1
+    batched_features['num_classes'] = 10
+
     # Display the training images in the visualizer.
-    tf.summary.image('images', images)
+    tf.summary.image('images', batched_features['images'])
 
-    return images, tf.reshape(label_batch, [batch_size])
+    return batched_features
 
 
-def distorted_inputs(cifar10or20or100, data_dir, batch_size):
-    """使用Reader ops 构造distorted input 用于CIFAR的训练
+def _distort_resize(image, height, width):
+    """Distorts input images for CIFAR training.
 
-  输入参数:
-   cifar10or20or100:指定要读取的数据集是cifar10 还是细分类的cifar100 ，或者粗分类的cifar100
-    data_dir: 指向CIFAR-10 或者 CIFAR-100 数据集的目录
-    batch_size: 每个批次的图像数量
+  Adds standard distortions such as flipping, cropping and changing brightness
+  and contrast.
+
+  Args:
+    image: A float32 tensor with last dimmension equal to 3.
+    image_size: The output image size after cropping.
 
   Returns:
-    images: Images. 4D tensor of [batch_size, IMAGE_SIZE, IMAGE_SIZE, 3] size.
-    labels: Labels. 1D tensor of [batch_size] size.
+    distorted_image: A float32 tensor with shape [image_size, image_size, 3].
   """
-
-    # 判断是读取cifar10 还是 cifar100（cifar100可分为20类或100类）
-    if cifar10or20or100 == 10:
-        filenames = [os.path.join(data_dir, 'data_batch_%d.bin' % i) for i in xrange(1, 6)]
-        read_cifar = read_cifar10
-        coarse_or_fine = None
-    if cifar10or20or100 == 20:
-        filenames = [os.path.join(data_dir, 'train.bin')]
-        read_cifar = read_cifar100
-        coarse_or_fine = 'coarse'
-    if cifar10or20or100 == 100:
-        filenames = [os.path.join(data_dir, 'train.bin')]
-        read_cifar = read_cifar100
-        coarse_or_fine = 'fine'
-
-    # 检查文件是否存在
-    for f in filenames:
-        if not tf.gfile.Exists(f):
-            raise ValueError('Failed to find file: ' + f)
-
-    # 根据文件名列表创建一个文件名队列
-    filename_queue = tf.train.string_input_producer(filenames)
-
-    # 从文件名队列的文件中读取样本
-    float_image, label = read_cifar(filename_queue)
-
-    # 要生成的目标图像的大小，在这里与原图像的尺寸保持一致
-    height = IMAGE_SIZE
-    width = IMAGE_SIZE
-
-    # 为图像添加padding = 4，图像尺寸变为[32+4,32+4],为后面的随机裁切留出位置
-    padded_image = tf.image.resize_image_with_crop_or_pad(float_image, width + 4, height + 4)
-
-    # 下面的这些操作为原始图像添加了很多不同的distortions，扩增了原始训练数据集
-
-    # 在[36,36]大小的图像中随机裁切出[height,width]即[32,,32]的图像区域
-    distorted_image = tf.random_crop(padded_image, [height, width, 3])
-
-    # 将图像进行随机的水平翻转（左边和右边的像素对调）
+    distorted_image = tf.random_crop(image, [height, width, 3])
     distorted_image = tf.image.random_flip_left_right(distorted_image)
-
-    # 下面这两个操作不满足交换律，即 亮度调整+对比度调整 和 对比度调整+亮度调整
-    # 产生的结果是不一样的，你可以采取随机的顺序来执行这两个操作
     distorted_image = tf.image.random_brightness(distorted_image, max_delta=63)
-    distorted_image = tf.image.random_contrast(distorted_image, lower=0.2, upper=1.8)
-
-    # 数据集标准化操作：减去均值+方差归一化(divide by the variance of the pixels)
-    image = tf.image.per_image_standardization(distorted_image)
-
-    # 设置张量的形状
-    image.set_shape([height, width, 3])
-
-    # 确保： the random shuffling has good mixing properties.
-    min_fraction_of_examples_in_queue = 0.4
-    min_queue_examples = int(NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN *
-                             min_fraction_of_examples_in_queue)
-    print('Filling queue with %d CIFAR images before starting to train. '
-          'This will take a few minutes.' % min_queue_examples)
-
-    # Generate a batch of images and labels by building up a queue of examples.
-    return _generate_image_and_label_batch(image, label,
-                                           min_queue_examples, batch_size,
-                                           shuffle=True)
+    distorted_image = tf.image.random_contrast(
+        distorted_image, lower=0.2, upper=1.8)
+    distorted_image.set_shape([height, width, 3])
+    return distorted_image
 
 
-def inputs(cifar10or20or100, eval_data, data_dir, batch_size):
+def inputs(cifar10or20or100, eval_data, data_dir, batch_size, distort=False):
     """使用Reader ops 读取数据集，用于CIFAR的评估
 
   输入参数:
-  cifar10or20or100:指定要读取的数据集是cifar10 还是细分类的cifar100 ，或者粗分类的cifar100
+    cifar10or20or100:指定要读取的数据集是cifar10 还是细分类的cifar100 ，或者粗分类的cifar100
     eval_data: True or False ,指示要读取的是训练集还是测试集
     data_dir: 指向CIFAR-10 或者 CIFAR-100 数据集的目录
     batch_size: 每个批次的图像数量
+    distort:数据增强
 
   返回:
     images: Images. 4D tensor of [batch_size, IMAGE_SIZE, IMAGE_SIZE, 3] size.
@@ -399,22 +323,28 @@ def inputs(cifar10or20or100, eval_data, data_dir, batch_size):
     width = IMAGE_SIZE
 
     # 用于评估过程的图像数据预处理
-    # Crop the central [height, width] of the image.（其实这里并未发生裁剪）
-    resized_image = tf.image.resize_image_with_crop_or_pad(float_image, width, height)
+    if distort:
+        # 为图像添加padding = 4，图像尺寸变为[32+4,32+4],为后面的随机裁切留出位置
+        padded_image = tf.image.resize_image_with_crop_or_pad(float_image, width + 4, height + 4)
+        # 下面的这些操作为原始图像添加了很多不同的distortions，扩增了原始训练数据集
+
+        resized_image = _distort_resize(float_image, height, width)
+    else:
+        # Crop the central [height, width] of the image.（其实这里并未发生裁剪）
+        resized_image = tf.image.resize_image_with_crop_or_pad(float_image, width, height)
 
     # 数据集标准化操作：减去均值 + 方差标准化
     image = tf.image.per_image_standardization(resized_image)
-
-    # 设置数据集中张量的形状
-    image.set_shape([height, width, 3])
 
     # Ensure that the random shuffling has good mixing properties.
     min_fraction_of_examples_in_queue = 0.4
     min_queue_examples = int(num_examples_per_epoch *
                              min_fraction_of_examples_in_queue)
+    print('Filling queue with %d CIFAR images before starting to train. '
+          'This will take a few minutes.' % min_queue_examples)
 
     # Generate a batch of images and labels by building up a queue of examples.
     # 通过构造样本队列(a queue of examples)产生一个批次的图像和标签
     return _generate_image_and_label_batch(image, label,
-                                           min_queue_examples, batch_size,
-                                           shuffle=False)
+                                           min_queue_examples, batch_size, height,
+                                           shuffle=False if eval_data else True)
