@@ -118,6 +118,13 @@ def evaluation(model, supervisor, num_label):
 
 
 def main(_):
+    if cfg.model == 'vectorCaps':
+        from models.vectorCapsNet import CapsNet
+    elif cfg.model == 'matrixCaps':
+        from models.matrixCapsNet import CapsNet
+    else:
+        from models.baseline import Model
+
     if cfg.dataset == 'mnist' or cfg.dataset == 'fashion-mnist':
         tf.logging.info(' Loading Graph...')
         num_label = 10
@@ -125,6 +132,9 @@ def main(_):
     elif cfg.dataset == 'smallNORB':
         model = CapsNet(height=32, width=32, channels=3, num_label=5)
         num_label = 5
+    elif cfg.dataset == 'cifar10':
+        pass
+
     tf.logging.info(' Graph loaded')
 
     sv = tf.train.Supervisor(graph=model.graph, logdir=cfg.logdir, save_model_secs=0)
@@ -137,11 +147,4 @@ def main(_):
         evaluation(model, sv, num_label)
 
 if __name__ == "__main__":
-    model = 'vectorCapsNet'
-    if model == 'vectorCapsNet':
-        from vectorCapsNet import CapsNet
-    elif model == 'matrixCapsNet':
-        from matrixCapsNet import CapsNet
-    else:
-        raise Exception('Unsupported model, please check the name of model:', model)
     tf.app.run()

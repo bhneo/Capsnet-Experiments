@@ -8,6 +8,9 @@ flags = tf.app.flags
 #    hyper parameters      #
 ############################
 
+# Model
+flags.DEFINE_string('model', 'vectorCaps', 'the model type')
+
 # For margin loss
 flags.DEFINE_float('m_plus', 0.9, 'the parameter of m plus')
 flags.DEFINE_float('m_minus', 0.1, 'the parameter of m minus')
