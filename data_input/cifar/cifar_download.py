@@ -5,7 +5,7 @@ import tensorflow as tf
 
 from six.moves import urllib
 
-tf.app.flags.DEFINE_string('dir', '../../data/cifar10', 'directory')
+tf.app.flags.DEFINE_string('dir', 'data/cifar10', 'directory')
 tf.app.flags.DEFINE_integer('cifar', 10, 'cifar 10 or 100')
 tf.app.flags.DEFINE_bool('b', True, 'is binary')
 FLAGS = tf.app.flags.FLAGS
