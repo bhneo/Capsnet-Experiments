@@ -21,7 +21,7 @@ class BaseModel(object):
             is_training: ...
         '''
         self.height = height
-        self.width =width
+        self.width = width
         self.channels = channels
         self.num_label = num_label
 

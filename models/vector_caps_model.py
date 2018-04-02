@@ -50,15 +50,20 @@ class CapsNet(BaseModel):
             primaryCaps = tf.reshape(primaryCaps, shape=[self.batch_size, -1, 8, 1])
             self.digitCaps, self.activation = capslayer.layers.fully_connected(primaryCaps, activation, num_outputs=10, out_caps_shape=[16, 1], routing_method='DynamicRouting')
 
-        # Decoder structure in Fig. 2
-        # Reconstructe the MNIST images with 3 FC layers
-        # [batch_size, 1, 16, 1] => [batch_size, 16] => [batch_size, 512]
-        with tf.variable_scope('Decoder'):
-            masked_caps = tf.multiply(self.digitCaps, tf.reshape(self.Y, (-1, self.num_label, 1, 1)))
-            active_caps = tf.reshape(masked_caps, shape=(self.batch_size, -1))
-            fc1 = tf.contrib.layers.fully_connected(active_caps, num_outputs=512)
-            fc2 = tf.contrib.layers.fully_connected(fc1, num_outputs=1024)
-            self.decoded = tf.layers.fully_connected(fc2, num_outputs=self.height * self.width * self.channels, activation_fn=tf.sigmoid)
+        if self.reconstruction:
+            # Decoder structure in Fig. 2
+            # Reconstructe the MNIST images with 3 FC layers
+            # [batch_size, 1, 16, 1] => [batch_size, 16] => [batch_size, 512]
+            with tf.variable_scope('Decoder'):
+                masked_caps = tf.multiply(self.digitCaps, tf.reshape(self.Y, (-1, self.num_label, 1, 1)))
+                active_caps = tf.reshape(masked_caps, shape=(self.batch_size, -1))
+                fc1 = tf.contrib.layers.fully_connected(active_caps, num_outputs=512)
+                fc2 = tf.contrib.layers.fully_connected(fc1, num_outputs=1024)
+                self.decoded = tf.layers.fully_connected(fc2, num_outputs=self.height * self.width * self.channels,
+                                                         activation_fn=tf.sigmoid)
+
+        return self.activation
+
 
     def loss(self):
         # 1. Margin loss
