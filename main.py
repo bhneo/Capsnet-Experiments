@@ -8,7 +8,6 @@ from models.config import cfg
 from capslayer.utils import load_data
 
 
-
 def train(model, supervisor, num_label):
     trX, trY, num_tr_batch, valX, valY, num_val_batch = load_data(cfg.dataset, cfg.batch_size, is_training=True)
     Y = valY[:num_val_batch * cfg.batch_size].reshape((-1, 1))
@@ -38,7 +37,8 @@ def train(model, supervisor, num_label):
                 global_step = epoch * num_tr_batch + step
 
                 if global_step % cfg.train_sum_freq == 0:
-                    _, loss, train_acc, summary_str = sess.run([model.train_op, model.loss, model.accuracy, model.train_summary])
+                    _, loss, train_acc, summary_str = sess.run(
+                        [model.train_op, model.loss, model.accuracy, model.train_summary])
                     assert not np.isnan(loss), 'Something wrong! loss is nan...'
                     train_writer.add_summary(summary_str, global_step)
 
@@ -51,7 +51,8 @@ def train(model, supervisor, num_label):
                     for i in range(num_val_batch):
                         start = i * cfg.batch_size
                         end = start + cfg.batch_size
-                        acc, prob[start:end, :] = sess.run([model.accuracy, model.activation], {model.X: valX[start:end], model.labels: valY[start:end]})
+                        acc, prob[start:end, :] = sess.run([model.accuracy, model.activation],
+                                                           {model.X: valX[start:end], model.labels: valY[start:end]})
                         val_acc += acc
                     val_acc = val_acc / (cfg.batch_size * num_val_batch)
 
@@ -73,28 +74,32 @@ def evaluation(model, supervisor, num_label):
         for i in tqdm(range(num_te_batch), total=num_te_batch, ncols=70, leave=False, unit='b'):
             start = i * cfg.batch_size
             end = start + cfg.batch_size
-            acc, prob[start:end, :] = sess.run([model.accuracy, model.activation], {model.X: teX[start:end], model.labels: teY[start:end]})
+            acc, prob[start:end, :] = sess.run([model.accuracy, model.activation],
+                                               {model.X: teX[start:end], model.labels: teY[start:end]})
             test_acc += acc
         test_acc = test_acc / (cfg.batch_size * num_te_batch)
 
 
 def main(_):
     if cfg.model == 'vector':
-        from models.vector_caps_model import CapsNet
+        from models.vector_caps_model import CapsNet as Model
     elif cfg.model == 'matrix':
-        from models.matrix_caps_model import CapsNet
+        from models.matrix_caps_model import CapsNet as Model
     else:
         from models.baseline import Model
 
     if cfg.dataset == 'mnist' or cfg.dataset == 'fashion-mnist':
         tf.logging.info(' Loading Graph...')
         num_label = 10
-        model = CapsNet(height=28, width=28, channels=1, num_label=10)
+        model = Model(height=28, width=28, channels=1, num_label=10)
     elif cfg.dataset == 'smallNORB':
-        model = CapsNet(height=32, width=32, channels=3, num_label=5)
+        model = Model(height=32, width=32, channels=3, num_label=5)
         num_label = 5
     elif cfg.dataset == 'cifar10':
-        pass
+        model = Model(height=32, width=32, channels=3, num_label=10)
+        num_label = 10
+    else:
+        raise EnvironmentError('no such data set')
 
     tf.logging.info(' Graph loaded')
 
@@ -106,6 +111,7 @@ def main(_):
         tf.logging.info('Training done')
     else:
         evaluation(model, sv, num_label)
+
 
 if __name__ == "__main__":
     tf.app.run()

@@ -7,12 +7,12 @@ import numpy as np
 from functools import reduce
 
 from capslayer.utils import get_transformation_matrix_shape
-from capslayer.utils import euclidean_norm
 from capslayer.ops import routing
 from capslayer.ops import dynamic_routing
 from capslayer.ops import squash
 from capslayer.ops import _update_routing
 from capslayer import variables
+
 
 def fully_connected_v1(inputs, num_outputs):
     """
@@ -29,6 +29,7 @@ def fully_connected_v1(inputs, num_outputs):
         capsules = dynamic_routing(inputs, b_ij)
         capsules = tf.squeeze(capsules, axis=1)
     return capsules
+
 
 def fully_connected(inputs, activation,
                     num_outputs,
@@ -64,10 +65,13 @@ def fully_connected(inputs, activation,
             pose = tf.reshape(pose, shape=[batch_size, num_outputs] + out_caps_shape)
             activation = tf.reshape(activation, shape=[batch_size, -1])
         elif routing_method == 'DynamicRouting':
-            pose, _ = routing(vote, activation, num_outputs=num_outputs, out_caps_shape=out_caps_shape, method=routing_method)
+            pose, _ = routing(vote, activation, num_outputs=num_outputs, out_caps_shape=out_caps_shape,
+                              method=routing_method)
             pose = tf.squeeze(pose, axis=1)
             activation = tf.squeeze(euclidean_norm(pose))
-    return(pose, activation)
+        else:
+            raise EnvironmentError()
+    return (pose, activation)
 
 
 def fully_connected_caps_layer_thibo(input_layer, capsules_size, nb_capsules, iterations=4):
@@ -116,6 +120,7 @@ def fully_connected_caps_layer_thibo(input_layer, capsules_size, nb_capsules, it
 
     return routing(u_hat, b_ij, nb_capsules, nb_capsules_p, iterations=iterations)
 
+
 def primaryCaps_v1(input, filters, kernel_size=9, stride=2, vec_len=8, activation=tf.nn.relu):
     """build primary caps layer according to the 1st paper
 
@@ -124,7 +129,7 @@ def primaryCaps_v1(input, filters, kernel_size=9, stride=2, vec_len=8, activatio
     :param stride: ...
     :return: caps: [batch_size, width, height, channels] + cap_shape
     """
-    capsules = tf.layers.conv2d(input, filters*vec_len, kernel_size, stride, padding='VALID', activation=activation)
+    capsules = tf.layers.conv2d(input, filters * vec_len, kernel_size, stride, padding='VALID', activation=activation)
     batch_size = input.get_shape().as_list()[0]
     capsules = tf.reshape(capsules, (batch_size, -1, vec_len, 1))
 
@@ -166,11 +171,11 @@ def primaryCaps(input, filters,
                                       activation=tf.nn.sigmoid,
                                       activity_regularizer=regularizer)
     elif method == 'norm':
-        activation = euclidean_norm(pose)
+        activation = tf.sqrt(tf.reduce_sum(tf.square(pose), axis=2, keepdims=True) + 1e-9)
     else:
         activation = None
 
-    return(pose, activation)
+    return pose, activation
 
 
 def conv2d(in_pose,
@@ -266,7 +271,8 @@ def conv2d(in_pose,
     out_pose = tf.concat(out_pose, axis=1)
     out_activation = tf.concat(out_activation, axis=1)
 
-    return(out_pose, out_activation)
+    return (out_pose, out_activation)
+
 
 def conv_slim_capsule(input_tensor,
                       input_dim,
@@ -278,7 +284,7 @@ def conv_slim_capsule(input_tensor,
                       kernel_size=5,
                       padding='SAME',
                       **routing_args):
-  """Builds a slim convolutional capsule layer.
+    """Builds a slim convolutional capsule layer.
 
   This layer performs 2D convolution given 5D input tensor of shape
   `[batch, input_dim, input_atoms, input_height, input_width]`. Then refines
@@ -315,32 +321,33 @@ def conv_slim_capsule(input_tensor,
       'SAME', out_height = in_height and out_width = in_width. Otherwise, height
       and width is adjusted with same rules as 'VALID' in tf.nn.conv2d.
   """
-  with tf.variable_scope(layer_name):
-    # convolution. return [batch_size, 1, 32, 8, 6, 6]
-    kernel = variables.weight_variable(shape=[
-        kernel_size, kernel_size, input_atoms, output_dim * output_atoms
-    ])
-    biases = variables.bias_variable([output_dim, output_atoms, 1, 1])
-    votes, votes_shape, input_shape = _depthwise_conv3d(
-        input_tensor, kernel, input_dim, output_dim, input_atoms, output_atoms,
-        stride, padding)
-    # convolution End
+    with tf.variable_scope(layer_name):
+        # convolution. return [batch_size, 1, 32, 8, 6, 6]
+        kernel = variables.weight_variable(shape=[
+            kernel_size, kernel_size, input_atoms, output_dim * output_atoms
+        ])
+        biases = variables.bias_variable([output_dim, output_atoms, 1, 1])
+        votes, votes_shape, input_shape = _depthwise_conv3d(
+            input_tensor, kernel, input_dim, output_dim, input_atoms, output_atoms,
+            stride, padding)
+        # convolution End
 
-    with tf.name_scope('routing'):
-      logit_shape = tf.stack([
-          input_shape[0], input_dim, output_dim, votes_shape[2], votes_shape[3]
-      ])
-      biases_replicated = tf.tile(biases,
-                                  [1, 1, votes_shape[2], votes_shape[3]])
-      activations = _update_routing(
-          votes=votes,
-          biases=biases_replicated,
-          logit_shape=logit_shape,
-          num_dims=6,
-          input_dim=input_dim,
-          output_dim=output_dim,
-          **routing_args)
-    return activations
+        with tf.name_scope('routing'):
+            logit_shape = tf.stack([
+                input_shape[0], input_dim, output_dim, votes_shape[2], votes_shape[3]
+            ])
+            biases_replicated = tf.tile(biases,
+                                        [1, 1, votes_shape[2], votes_shape[3]])
+            activations = _update_routing(
+                votes=votes,
+                biases=biases_replicated,
+                logit_shape=logit_shape,
+                num_dims=6,
+                input_dim=input_dim,
+                output_dim=output_dim,
+                **routing_args)
+        return activations
+
 
 def _depthwise_conv3d(input_tensor,
                       kernel,
@@ -350,7 +357,7 @@ def _depthwise_conv3d(input_tensor,
                       output_atoms=8,
                       stride=2,
                       padding='SAME'):
-  """Performs 2D convolution given a 5D input tensor.
+    """Performs 2D convolution given a 5D input tensor.
 
   This layer given an input tensor of shape
   `[batch, input_dim, input_atoms, input_height, input_width]` squeezes the
@@ -377,35 +384,36 @@ def _depthwise_conv3d(input_tensor,
       Otherwise, height and width is adjusted with same rules as 'VALID' in
       tf.nn.conv2d.
   """
-  with tf.name_scope('conv'):
-    input_shape = tf.shape(input_tensor)
-    _, _, _, in_height, in_width = input_tensor.get_shape()
-    # Reshape input_tensor to 4D by merging first two dimmensions.
-    # tf.nn.conv2d only accepts 4D tensors.
+    with tf.name_scope('conv'):
+        input_shape = tf.shape(input_tensor)
+        _, _, _, in_height, in_width = input_tensor.get_shape()
+        # Reshape input_tensor to 4D by merging first two dimmensions.
+        # tf.nn.conv2d only accepts 4D tensors.
 
-    input_tensor_reshaped = tf.reshape(input_tensor, [
-        input_shape[0] * input_dim, input_atoms, input_shape[3], input_shape[4]
-    ])
-    input_tensor_reshaped.set_shape((None, input_atoms, in_height.value,
-                                     in_width.value))
-    conv = tf.nn.conv2d(
-        input_tensor_reshaped,
-        kernel,
-        [1, 1, stride, stride],
-        padding=padding,
-        data_format='NCHW')
-    conv_shape = tf.shape(conv)
-    _, _, conv_height, conv_width = conv.get_shape()
-    # Reshape back to 6D by splitting first dimmension to batch and input_dim
-    # and splitting second dimmension to output_dim and output_atoms.
+        input_tensor_reshaped = tf.reshape(input_tensor, [
+            input_shape[0] * input_dim, input_atoms, input_shape[3], input_shape[4]
+        ])
+        input_tensor_reshaped.set_shape((None, input_atoms, in_height.value,
+                                         in_width.value))
+        conv = tf.nn.conv2d(
+            input_tensor_reshaped,
+            kernel,
+            [1, 1, stride, stride],
+            padding=padding,
+            data_format='NCHW')
+        conv_shape = tf.shape(conv)
+        _, _, conv_height, conv_width = conv.get_shape()
+        # Reshape back to 6D by splitting first dimmension to batch and input_dim
+        # and splitting second dimmension to output_dim and output_atoms.
 
-    conv_reshaped = tf.reshape(conv, [
-        input_shape[0], input_dim, output_dim, output_atoms, conv_shape[2],
-        conv_shape[3]
-    ])
-    conv_reshaped.set_shape((None, input_dim, output_dim, output_atoms,
-                             conv_height.value, conv_width.value))
-    return conv_reshaped, conv_shape, input_shape
+        conv_reshaped = tf.reshape(conv, [
+            input_shape[0], input_dim, output_dim, output_atoms, conv_shape[2],
+            conv_shape[3]
+        ])
+        conv_reshaped.set_shape((None, input_dim, output_dim, output_atoms,
+                                 conv_height.value, conv_width.value))
+        return conv_reshaped, conv_shape, input_shape
+
 
 def capsule(input_tensor,
             input_dim,
@@ -414,7 +422,7 @@ def capsule(input_tensor,
             input_atoms=8,
             output_atoms=8,
             **routing_args):
-  """Builds a fully connected capsule layer.
+    """Builds a fully connected capsule layer.
 
   Given an input tensor of shape `[batch, input_dim, input_atoms]`, this op
   performs the following:
@@ -442,33 +450,33 @@ def capsule(input_tensor,
     Tensor of activations for this layer of shape
       `[batch, output_dim, output_atoms]`.
   """
-  with tf.variable_scope(layer_name):
-    # weights variable will hold the state of the weights for the layer
-    weights = variables.weight_variable(
-        [input_dim, input_atoms, output_dim * output_atoms])
-    biases = variables.bias_variable([output_dim, output_atoms])
-    # Eq.2, u_hat = W * u
-    with tf.name_scope('Wx_plus_b'):
-      # Depthwise matmul: [b, d, c] ** [d, c, o_c] = [b, d, o_c]
-      # To do this: tile input, do element-wise multiplication and reduce
-      # sum over input_atoms dimmension.
-      input_tiled = tf.tile(
-          tf.expand_dims(input_tensor, -1),
-          [1, 1, 1, output_dim * output_atoms])
-      votes = tf.reduce_sum(input_tiled * weights, axis=2)
-      votes_reshaped = tf.reshape(votes,
-                                  [-1, input_dim, output_dim, output_atoms])
-    # Eq.2 End, get votes_reshaped [batch_size, 1152, 10, 16]
-    with tf.name_scope('routing'):
-      input_shape = tf.shape(input_tensor)
-      logit_shape = tf.stack([input_shape[0], input_dim, output_dim])
-      # Routing algorithm, return [batch_size, 10, 16]
-      activations = _update_routing(
-          votes=votes_reshaped,
-          biases=biases,
-          logit_shape=logit_shape,
-          num_dims=4,
-          input_dim=input_dim,
-          output_dim=output_dim,
-          **routing_args)
-    return activations
+    with tf.variable_scope(layer_name):
+        # weights variable will hold the state of the weights for the layer
+        weights = variables.weight_variable(
+            [input_dim, input_atoms, output_dim * output_atoms])
+        biases = variables.bias_variable([output_dim, output_atoms])
+        # Eq.2, u_hat = W * u
+        with tf.name_scope('Wx_plus_b'):
+            # Depthwise matmul: [b, d, c] ** [d, c, o_c] = [b, d, o_c]
+            # To do this: tile input, do element-wise multiplication and reduce
+            # sum over input_atoms dimmension.
+            input_tiled = tf.tile(
+                tf.expand_dims(input_tensor, -1),
+                [1, 1, 1, output_dim * output_atoms])
+            votes = tf.reduce_sum(input_tiled * weights, axis=2)
+            votes_reshaped = tf.reshape(votes,
+                                        [-1, input_dim, output_dim, output_atoms])
+        # Eq.2 End, get votes_reshaped [batch_size, 1152, 10, 16]
+        with tf.name_scope('routing'):
+            input_shape = tf.shape(input_tensor)
+            logit_shape = tf.stack([input_shape[0], input_dim, output_dim])
+            # Routing algorithm, return [batch_size, 10, 16]
+            activations = _update_routing(
+                votes=votes_reshaped,
+                biases=biases,
+                logit_shape=logit_shape,
+                num_dims=4,
+                input_dim=input_dim,
+                output_dim=output_dim,
+                **routing_args)
+        return activations
