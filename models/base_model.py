@@ -42,7 +42,7 @@ class BaseModel(object):
                 self.train_op = self.optimizer.minimize(loss, global_step=self.global_step)
 
             with tf.variable_scope('accuracy'):
-                logits_idx = tf.to_int32(tf.argmax(tf.softmax(logits, axis=1), axis=1))
+                logits_idx = tf.to_int32(tf.argmax(tf.nn.softmax(logits, axis=1), axis=1))
                 correct_prediction = tf.equal(tf.to_int32(self.labels), logits_idx)
                 self.accuracy = tf.reduce_sum(tf.cast(correct_prediction, tf.float32))
 

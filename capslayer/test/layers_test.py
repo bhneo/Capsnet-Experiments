@@ -1,3 +1,8 @@
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+
+
 import tensorflow as tf
 from capslayer import layers
 
@@ -27,16 +32,17 @@ class LayersTest(tf.test.TestCase):
         Tests the correct number of variables are declared and shape of the output
         is as a 5D list with the correct numbers.
         """
-        input_tensor = tf.random_uniform((6, 4, 2, 3, 3))
+        # input_tensor = tf.random_uniform((6, 4, 2, 3, 3))
+        input_tensor = tf.random_uniform((128, 1, 256, 20, 20))
         output = layers.conv_slim_capsule(
             input_tensor=input_tensor,
-            input_dim=4,
-            output_dim=2,
+            input_dim=1,
+            output_dim=32,
             layer_name='conv_capsule',
-            input_atoms=2,
-            output_atoms=5,
-            stride=1,
-            kernel_size=2,
+            input_atoms=256,
+            output_atoms=8,
+            stride=2,
+            kernel_size=9,
             padding='SAME',
             num_routing=3,
             leaky=False)

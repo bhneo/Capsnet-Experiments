@@ -6,35 +6,18 @@ import tensorflow as tf
 import numpy as np
 from functools import reduce
 
-from capslayer.utils import get_transformation_matrix_shape
+from data_input.utils import get_transformation_matrix_shape
 from capslayer.ops import routing
 from capslayer.ops import dynamic_routing
 from capslayer.ops import squash
 from capslayer.ops import _update_routing
 from capslayer import variables
-
-
-def fully_connected_v1(inputs, num_outputs):
-    """
-
-    :param inputs: [batch_size, input_num, vec_len, 1]
-    :param num_outputs:
-    :return:
-    """
-    batch_size = inputs.get_shape().as_list()[0]
-    inputs = tf.reshape(inputs, shape=(batch_size, -1, 1, inputs.shape[-2].value, 1))
-
-    with tf.variable_scope('routing'):
-        b_ij = tf.constant(np.zeros([batch_size, inputs.shape[1].value, num_outputs, 1, 1], dtype=np.float32))
-        capsules = dynamic_routing(inputs, b_ij)
-        capsules = tf.squeeze(capsules, axis=1)
-    return capsules
+from models import config as cfg
 
 
 def fully_connected(inputs, activation,
                     num_outputs,
                     out_caps_shape,
-                    routing_method='EMRouting',
                     reuse=None):
     '''A capsule fully connected layer.
     Args:
@@ -58,80 +41,45 @@ def fully_connected(inputs, activation,
         # vote: [batch_size, num_inputs, num_outputs] + out_caps_shape
         vote = tf.matmul(T_matrix, inputs)
     with tf.variable_scope('routing'):
-        if routing_method == 'EMRouting':
-            activation = tf.reshape(activation, shape=activation.get_shape().as_list() + [1, 1])
-            vote = tf.reshape(vote, shape=[batch_size, num_inputs, num_outputs, -1])
-            pose, activation = routing(vote, activation, num_outputs, out_caps_shape, routing_method)
-            pose = tf.reshape(pose, shape=[batch_size, num_outputs] + out_caps_shape)
-            activation = tf.reshape(activation, shape=[batch_size, -1])
-        elif routing_method == 'DynamicRouting':
-            pose, _ = routing(vote, activation, num_outputs=num_outputs, out_caps_shape=out_caps_shape,
-                              method=routing_method)
-            pose = tf.squeeze(pose, axis=1)
-            activation = tf.squeeze(euclidean_norm(pose))
-        else:
-            raise EnvironmentError()
-    return (pose, activation)
+        activation = tf.reshape(activation, shape=activation.get_shape().as_list() + [1, 1])
+        vote = tf.reshape(vote, shape=[batch_size, num_inputs, num_outputs, -1])
+        pose, activation = routing(vote, activation, num_outputs, out_caps_shape)
+        pose = tf.reshape(pose, shape=[batch_size, num_outputs] + out_caps_shape)
+        activation = tf.reshape(activation, shape=[batch_size, -1])
+    return pose, activation
 
 
-def fully_connected_caps_layer_thibo(input_layer, capsules_size, nb_capsules, iterations=4):
+def fully_connected_v1(inputs, num_outputs):
     """
-        Second layer receiving inputs from all capsules of the layer below
-            **input:
-                *input_layer: (Tensor)
-                *capsules_size: (Integer) Size of each capsule
-                *nb_capsules: (Integer) Number of capsule
-                *iterations: (Integer) Number of iteration for the routing algorithm
 
-            i refer to the layer below.
-            j refer to the layer above (the current layer).
+    :param inputs: [batch_size, input_num, vec_len, 1]
+    :param num_outputs:
+    :return:
     """
-    shape = input_layer.get_shape().as_list()
-    # Get the size of each capsule in the previous layer and the current layer.
-    len_u_i = np.prod(shape[2])
-    len_v_j = capsules_size
-    # Get the number of capsule in the layer bellow.
-    nb_capsules_p = np.prod(shape[1])
+    num_caps = inputs.shape[1].value
+    inputs = tf.reshape(inputs, shape=(cfg.batch_size, -1, 1, inputs.shape[-2].value, 1))
 
-    # w_ij: Used to compute u_hat by multiplying the output ui of a capsule in the layer below
-    # with this matrix
-    # [nb_capsules_p, nb_capsules, len_v_j, len_u_i]
-    _init = tf.random_normal_initializer(stddev=0.01, seed=0)
-    _shape = (nb_capsules_p, nb_capsules, len_v_j, len_u_i)
-    w_ij = tf.get_variable('weight', shape=_shape, dtype=tf.float32, initializer=_init)
-
-    # Adding one dimension to the input [batch_size, nb_capsules_p,    length(u_i), 1] ->
-    #                                   [batch_size, nb_capsules_p, 1, length(u_i), 1]
-    # To allow the next dot product
-    input_layer = tf.reshape(input_layer, shape=(-1, nb_capsules_p, 1, len_u_i, 1))
-    input_layer = tf.tile(input_layer, [1, 1, nb_capsules, 1, 1])
-
-    # Eq.2, calc u_hat
-    # Prediction uj|i made by capsule i
-    # w_ij:  [              nb_capsules_p, nb_capsules, len_v_j,  len_u_i, ]
-    # input: [batch_size,   nb_capsules_p, nb_capsules, len_ui,   1]
-    # u_hat: [batch_size,   nb_capsules_p, nb_capsules, len_v_j, 1]
-    # Each capsule of the previous layer capsule layer is associated to a capsule of this layer
-    u_hat = tf.einsum('abdc,iabcf->iabdf', w_ij, input_layer)
-
-    # bij are the log prior probabilities that capsule i should be coupled to capsule j
-    # [nb_capsules_p, nb_capsules, 1, 1]
-    b_ij = tf.zeros(shape=[nb_capsules_p, nb_capsules, 1, 1], dtype=np.float32)
-
-    return routing(u_hat, b_ij, nb_capsules, nb_capsules_p, iterations=iterations)
+    with tf.variable_scope('routing'):
+        b_ij = tf.constant(np.zeros([cfg.batch_size, num_caps, num_outputs, 1, 1], dtype=np.float32))
+        capsules = dynamic_routing(inputs, b_ij)
+        capsules = tf.squeeze(capsules, axis=1)
+    return capsules
 
 
-def primaryCaps_v1(input, filters, kernel_size=9, stride=2, vec_len=8, activation=tf.nn.relu):
+def primaryCaps_v1(inputs, filters, kernel_size=9, strides=2, vec_len=8, activation=tf.nn.relu):
     """build primary caps layer according to the 1st paper
 
-    :param input: the input tensor, shape is [batch_size, width, height, channels]
+    :param inputs: the input tensor, shape is [batch_size, width, height, channels]
+    :param filters:
     :param kernel_size: ...
-    :param stride: ...
-    :return: caps: [batch_size, width, height, channels] + cap_shape
+    :param strides: ...
+    :param vec_len:
+    :param activation:
+    :return: caps: [batch_size, caps_num, caps_atoms, 1]
+
     """
-    capsules = tf.layers.conv2d(input, filters * vec_len, kernel_size, stride, padding='VALID', activation=activation)
-    batch_size = input.get_shape().as_list()[0]
-    capsules = tf.reshape(capsules, (batch_size, -1, vec_len, 1))
+    capsules = tf.layers.conv2d(inputs, filters * vec_len, kernel_size, strides, padding='VALID', activation=activation)
+    capsules = tf.reshape(capsules, (cfg.batch_size, -1, vec_len, 1))
 
     return squash(capsules)
 

@@ -7,8 +7,8 @@ E-mail: naturomics.liao@gmail.com
 import tensorflow as tf
 
 from config import cfg
-from capslayer.utils import softmax
-from capslayer.utils import get_batch_data
+from data_input.utils import softmax
+from data_input.utils import get_batch_data
 import capslayer
 
 

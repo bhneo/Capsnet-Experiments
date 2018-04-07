@@ -5,7 +5,7 @@ import tensorflow as tf
 
 
 def load_mnist(batch_size, is_training=True):
-    path = os.path.join('models', 'data', 'mnist')
+    path = os.path.join('data', 'mnist')
     if is_training:
         fd = open(os.path.join(path, 'train-images-idx3-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
@@ -39,7 +39,7 @@ def load_mnist(batch_size, is_training=True):
 
 
 def load_fashion_mnist(batch_size, is_training=True):
-    path = os.path.join('models', 'data', 'fashion-mnist')
+    path = os.path.join('data', 'fashion-mnist')
     if is_training:
         fd = open(os.path.join(path, 'train-images-idx3-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
@@ -76,7 +76,7 @@ def load_smallNORB(batch_size, is_training=True):
     pass
 
 
-def load_data(dataset, batch_size, is_training=True, one_hot=False):
+def load_data(dataset, batch_size, is_training=True):
     if dataset == 'mnist':
         return load_mnist(batch_size, is_training)
     elif dataset == 'fashion-mnist':

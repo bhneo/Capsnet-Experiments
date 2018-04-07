@@ -8,9 +8,6 @@ flags = tf.app.flags
 #    hyper parameters      #
 ############################
 
-# Model
-flags.DEFINE_string('model', 'vectorCaps', 'the model type')
-
 # For margin loss
 flags.DEFINE_float('m_plus', 0.9, 'the parameter of m plus')
 flags.DEFINE_float('m_minus', 0.1, 'the parameter of m minus')
@@ -41,7 +38,7 @@ flags.DEFINE_integer('num_threads', 8, 'number of threads of enqueueing exampls'
 results = os.path.join('models', 'results')
 logdir = os.path.join(results, 'logdir')
 flags.DEFINE_string('logdir', logdir, 'logs directory')
-flags.DEFINE_string('model', 'vectorCapsNet', 'the model to use')
+flags.DEFINE_string('model', 'vector', 'the model to use')
 flags.DEFINE_boolean('debug', True, 'debug mode')
 
 ############################

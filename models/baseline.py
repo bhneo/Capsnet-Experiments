@@ -1,8 +1,7 @@
 import tensorflow as tf
 
-import capslayer
 from config import cfg
-from capslayer.utils import get_batch_data
+from data_input.utils import get_batch_data
 
 
 class Model(object):
