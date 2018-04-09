@@ -47,8 +47,8 @@ class CapsNet(BaseModel):
 
         # return primaryCaps: [batch_size, 1152, 8, 1], activation: [batch_size, 1152]
         with tf.variable_scope('PrimaryCaps_layer'):
-            primaryCaps = capslayer.layers.primaryCaps_v1(conv1, filters=32, kernel_size=9, strides=2, vec_len=8,
-                                                          activation=tf.nn.relu)
+            primaryCaps = capslayer.layers.vector_primary_caps(conv1, filters=32, kernel_size=9, strides=2, cap_size=8,
+                                                               activation=tf.nn.relu)
 
         # return digitCaps: [batch_size, num_label, 16, 1], activation: [batch_size, num_label]
         with tf.variable_scope('DigitCaps_layer'):
@@ -95,7 +95,7 @@ class CapsNet(BaseModel):
                 active_caps = tf.reshape(self.masked_v, shape=(self.batch_size, -1))
                 fc1 = tf.layers.dense(active_caps, units=512)
                 assert fc1.get_shape() == [self.batch_size, 512]
-                fc2 = tf.layers.dense(fc1, num_outputs=1024)
+                fc2 = tf.layers.dense(fc1, 1024)
                 assert fc2.get_shape() == [self.batch_size, 1024]
                 self.decoded = tf.layers.dense(fc2, units=self.height * self.width * self.channels,
                                                activation=tf.sigmoid)

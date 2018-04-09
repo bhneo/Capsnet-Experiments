@@ -6,10 +6,11 @@ epsilon = 1e-9
 
 def squash(input_tensor, axis=-2):
     """Squashing function
-    Args:
-        input_tensor: A tensor with shape [batch_size, 1, num_caps, vec_len, 1] or [batch_size, num_caps, vec_len, 1]
-    Returns:
-        A tensor with the same shape as vector but squashed in 'vec_len' dimension.
+
+    :param input_tensor:A tensor with shape [batch_size, 1, num_caps, vec_len, 1] or [batch_size, num_caps, vec_len, 1]
+    :param axis:
+    :return A tensor with the same shape as vector but squashed in 'vec_len' dimension.
+
     """
     squared_norm = tf.reduce_sum(tf.square(input_tensor), axis, keepdims=True)
     scalar_factor = squared_norm / (1 + squared_norm) / tf.sqrt(squared_norm + epsilon)
@@ -187,14 +188,48 @@ def _update_routing_v1(votes,
     return activation
 
 
-def dynamic_routing(inputs, b_ij, iter_routing=3, stddev=0.1):
+def compute_u_hat(inputs, cap_num_in, cap_num, cap_size_in, cap_size, stddev=0.1):
+    """
+    compute the u_hat by different ways
+    :param inputs: [128, 1152, ]
+    :param cap_num_in:
+    :param cap_num:
+    :param cap_size_in:
+    :param cap_size:
+    :param stddev:
+    :return:
+    """
+    W = tf.get_variable('Weight', shape=(1, cap_num_in, cap_size * cap_num, cap_size_in, 1), dtype=tf.float32,
+                        initializer=tf.random_normal_initializer(stddev=stddev))
+    biases = tf.get_variable('bias', shape=(1, 1, cap_num, cap_size, 1))
+
+    # Eq.2, calc u_hat
+    # Since tf.matmul is a time-consuming op,
+    # A better solution is using element-wise multiply, reduce_sum and reshape
+    # ops instead. Matmul [a, b] x [b, c] is equal to a series ops as
+    # element-wise multiply [a*c, b] * [a*c, b], reduce_sum at axis=1 and
+    # reshape to [a, c]
+    inputs = tf.tile(inputs, [1, 1, 160, 1, 1])
+    # now inputs shape is [batch_size, 1152, 160, 8, 1]
+    #      and w shape is [1, 1152, 160, 8, 1]
+
+    u_hat = tf.reduce_sum(W * inputs, axis=3, keepdims=True)
+    u_hat = tf.reshape(u_hat, shape=[-1, 1152, 10, 16, 1])
+
+    return u_hat
+
+
+def dynamic_routing(inputs, cap_num_in, cap_num, cap_size_in, cap_size, iter_routing=3, stddev=0.1):
     """ The routing algorithm.
 
         :param inputs: A Tensor with [batch_size, num_caps_l=1152, 1, length(u_i)=8, 1]
                shape, num_caps_l meaning the number of capsule in the layer l.
-        :param stddev:
+        :param cap_num_in: the number of input caps
+        :param cap_num: the number of output caps
+        :param cap_size_in: the cap size of the input caps
+        :param cap_size: the cap size of the output caps
         :param iter_routing:
-        :param b_ij:
+        :param stddev:
     Returns:
         A Tensor of shape [batch_size, num_caps_l_plus_1, length(v_j)=16, 1]
         representing the vector output `v_j` in the layer l+1
@@ -203,10 +238,12 @@ def dynamic_routing(inputs, b_ij, iter_routing=3, stddev=0.1):
         v_j the vector output of capsule j in the layer l+1.
      """
 
-    # W: [1, num_caps_i, num_caps_j * len_v_j, len_u_j, 1]
-    W = tf.get_variable('Weight', shape=(1, 1152, 160, 8, 1), dtype=tf.float32,
+    # [1152, 10, 1, 1]
+    b_ij = tf.zeros([cap_num_in, cap_num, 1, 1], dtype=np.float32)
+
+    W = tf.get_variable('Weight', shape=(1, cap_num_in, cap_size*cap_num, cap_size_in, 1), dtype=tf.float32,
                         initializer=tf.random_normal_initializer(stddev=stddev))
-    biases = tf.get_variable('bias', shape=(1, 1, 10, 16, 1))
+    biases = tf.get_variable('bias', shape=(1, 1, cap_num, cap_size, 1))
 
     # Eq.2, calc u_hat
     # Since tf.matmul is a time-consuming op,
@@ -214,13 +251,12 @@ def dynamic_routing(inputs, b_ij, iter_routing=3, stddev=0.1):
     # ops instead. Matmul [a, b] x [b, c] is equal to a series ops as
     # element-wise multiply [a*c, b] * [a*c, b], reduce_sum at axis=1 and
     # reshape to [a, c]
-    batch_size = inputs.get_shape().as_list()[0]
     inputs = tf.tile(inputs, [1, 1, 160, 1, 1])
-    assert inputs.get_shape() == [batch_size, 1152, 160, 8, 1]
+    # now inputs shape is [batch_size, 1152, 160, 8, 1]
+    #      and w shape is [1, 1152, 160, 8, 1]
 
     u_hat = tf.reduce_sum(W * inputs, axis=3, keepdims=True)
     u_hat = tf.reshape(u_hat, shape=[-1, 1152, 10, 16, 1])
-    assert u_hat.get_shape() == [batch_size, 1152, 10, 16, 1]
 
     # In forward, u_hat_stopped = u_hat; in backward, no gradient passed back from u_hat_stopped to u_hat
     u_hat_stopped = tf.stop_gradient(u_hat, name='stop_gradient')
@@ -229,8 +265,8 @@ def dynamic_routing(inputs, b_ij, iter_routing=3, stddev=0.1):
     for r_iter in range(iter_routing):
         with tf.variable_scope('iter_' + str(r_iter)):
             # line 4:
-            # => [batch_size, 1152, 10, 1, 1]
-            c_ij = tf.nn.softmax(b_ij, axis=2)
+            # => [1152, 10, 1, 1]
+            c_ij = tf.nn.softmax(b_ij, axis=1)
 
             # At last iteration, use `u_hat` in order to receive gradients from the following graph
             if r_iter == iter_routing - 1:
@@ -240,12 +276,12 @@ def dynamic_routing(inputs, b_ij, iter_routing=3, stddev=0.1):
                 s_j = tf.multiply(c_ij, u_hat)
                 # then sum in the second dim, resulting in [batch_size, 1, 10, 16, 1]
                 s_j = tf.reduce_sum(s_j, axis=1, keepdims=True) + biases
-                assert s_j.get_shape() == [batch_size, 1, 10, 16, 1]
+                # now s_j shape is [batch_size, 1, 10, 16, 1]
 
                 # line 6:
                 # squash using Eq.1,
                 v_j = squash(s_j)
-                assert v_j.get_shape() == [batch_size, 1, 10, 16, 1]
+                # now v_j shape is [batch_size, 1, 10, 16, 1]
             elif r_iter < iter_routing - 1:  # Inner iterations, do not apply backpropagation
                 s_j = tf.multiply(c_ij, u_hat_stopped)
                 s_j = tf.reduce_sum(s_j, axis=1, keepdims=True) + biases
@@ -255,7 +291,7 @@ def dynamic_routing(inputs, b_ij, iter_routing=3, stddev=0.1):
                 # reshape & tile v_j from [batch_size ,1, 10, 16, 1] to [batch_size, 1152, 10, 16, 1]
                 # then matmul in the last tow dim: [16, 1].T x [16, 1] => [1, 1], reduce mean in the
                 # batch_size dim, resulting in [1, 1152, 10, 1, 1]
-                v_j_tiled = tf.tile(v_j, [1, 1152, 1, 1, 1])
+                v_j_tiled = tf.tile(v_j, [1, 3, 1, 1, 1])
                 u_produce_v = tf.reduce_sum(u_hat_stopped * v_j_tiled, axis=3, keepdims=True)
                 assert u_produce_v.get_shape() == [batch_size, 1152, 10, 1, 1]
 

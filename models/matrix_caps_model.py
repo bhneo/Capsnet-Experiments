@@ -60,7 +60,7 @@ class CapsNet(object):
 
         # return primaryCaps: [batch_size, 1152, 8, 1], activation: [batch_size, 1152]
         with tf.variable_scope('PrimaryCaps_layer'):
-            primaryCaps, activation = capslayer.layers.primaryCaps(conv1, filters=32, kernel_size=9, strides=2, out_caps_shape=[8, 1])
+            primaryCaps, activation = capslayer.layers.matrix_primary_caps(conv1, filters=32, kernel_size=9, strides=2, out_caps_shape=[8, 1])
 
         # return digitCaps: [batch_size, num_label, 16, 1], activation: [batch_size, num_label]
         with tf.variable_scope('DigitCaps_layer'):
