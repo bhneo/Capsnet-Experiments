@@ -220,7 +220,7 @@ def compute_u_hat(inputs, cap_num_in, cap_num, cap_size_in, cap_size, stddev=0.1
 def dynamic_routing(u_hat, cap_num_in, cap_num, cap_size, iter_routing=3):
     """ The routing algorithm.
 
-        :param u_hat:
+        :param u_hat: [128, 1152, 10, 16]
         :param cap_num_in: the number of input caps
         :param cap_num: the number of output caps
         :param cap_size: the cap size of the output caps
@@ -233,9 +233,9 @@ def dynamic_routing(u_hat, cap_num_in, cap_num, cap_size, iter_routing=3):
         v_j the vector output of capsule j in the layer l+1.
      """
 
-    # [1152, 10, 1, 1]
-    b_ij = tf.zeros([cap_num_in, cap_num, 1, 1], dtype=np.float32)
-    biases = tf.get_variable('bias', shape=(1, 1, cap_num, cap_size, 1))
+    # [1152, 10]
+    b_ij = tf.zeros([cap_num_in, cap_num], dtype=np.float32)
+    biases = tf.get_variable('bias', shape=(cap_num, cap_size))
 
     # In forward, u_hat_stopped = u_hat; in backward, no gradient passed back from u_hat_stopped to u_hat
     u_hat_stopped = tf.stop_gradient(u_hat, name='stop_gradient')
