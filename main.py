@@ -45,7 +45,7 @@ def train(model, supervisor):
                     assert not np.isnan(loss), 'Something wrong! loss is nan...'
                     train_writer.add_summary(summary_str, global_step)
                     # valid
-                    valid_acc, summary_str = sess.run([model.accuracy, model.train_summary],
+                    valid_acc, summary_str = sess.run([model.accuracy, model.merged_summary],
                                                       {model.images: val_x_batch, model.labels: val_y_batch})
                 else:
                     sess.run(model.train_op, {model.images: tr_x_batch, model.labels: tr_y_batch})
@@ -54,7 +54,7 @@ def train(model, supervisor):
             for i in range(num_val_batch):
                 start = i * cfg.batch_size
                 end = start + cfg.batch_size
-                acc, summary_str = sess.run([model.accuracy, model.train_summary],
+                acc, summary_str = sess.run([model.accuracy, model.merged_summary],
                                             {model.X: valX[start:end], model.labels: valY[start:end]})
                 val_acc += acc
             val_acc = val_acc / (cfg.batch_size * num_val_batch)

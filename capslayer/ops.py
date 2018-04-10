@@ -188,10 +188,10 @@ def _update_routing_v1(votes,
     return activation
 
 
-def compute_u_hat(inputs, cap_num_in, cap_num, cap_size_in, cap_size, stddev=0.1):
+def compute_u_hat(inputs, cap_num_in, cap_num, cap_size_in, cap_size, stddev=0.1, ):
     """
     compute the u_hat by different ways
-    :param inputs: [128, 1152, ]
+    :param inputs: [128, 1152, 8, 1]
     :param cap_num_in:
     :param cap_num:
     :param cap_size_in:
@@ -199,37 +199,32 @@ def compute_u_hat(inputs, cap_num_in, cap_num, cap_size_in, cap_size, stddev=0.1
     :param stddev:
     :return:
     """
-    W = tf.get_variable('Weight', shape=(1, cap_num_in, cap_size * cap_num, cap_size_in, 1), dtype=tf.float32,
+    w = tf.get_variable('Weight', shape=(cap_num_in, cap_size_in, cap_size * cap_num), dtype=tf.float32,
                         initializer=tf.random_normal_initializer(stddev=stddev))
-    biases = tf.get_variable('bias', shape=(1, 1, cap_num, cap_size, 1))
 
-    # Eq.2, calc u_hat
     # Since tf.matmul is a time-consuming op,
     # A better solution is using element-wise multiply, reduce_sum and reshape
     # ops instead. Matmul [a, b] x [b, c] is equal to a series ops as
     # element-wise multiply [a*c, b] * [a*c, b], reduce_sum at axis=1 and
     # reshape to [a, c]
-    inputs = tf.tile(inputs, [1, 1, 160, 1, 1])
-    # now inputs shape is [batch_size, 1152, 160, 8, 1]
-    #      and w shape is [1, 1152, 160, 8, 1]
+    inputs = tf.tile(inputs, [1, 1, 1, cap_num*cap_size])
+    # now inputs shape is [batch_size,1152,8,160] or [128,1152,8,160]
+    #      and w shape is [1152, 8, 160]
 
-    u_hat = tf.reduce_sum(W * inputs, axis=3, keepdims=True)
-    u_hat = tf.reshape(u_hat, shape=[-1, 1152, 10, 16, 1])
+    u_hat = tf.reduce_sum(w * inputs, axis=2)
+    u_hat = tf.reshape(u_hat, shape=[-1, cap_num_in, cap_num, cap_size])
 
     return u_hat
 
 
-def dynamic_routing(inputs, cap_num_in, cap_num, cap_size_in, cap_size, iter_routing=3, stddev=0.1):
+def dynamic_routing(u_hat, cap_num_in, cap_num, cap_size, iter_routing=3):
     """ The routing algorithm.
 
-        :param inputs: A Tensor with [batch_size, num_caps_l=1152, 1, length(u_i)=8, 1]
-               shape, num_caps_l meaning the number of capsule in the layer l.
+        :param u_hat:
         :param cap_num_in: the number of input caps
         :param cap_num: the number of output caps
-        :param cap_size_in: the cap size of the input caps
         :param cap_size: the cap size of the output caps
         :param iter_routing:
-        :param stddev:
     Returns:
         A Tensor of shape [batch_size, num_caps_l_plus_1, length(v_j)=16, 1]
         representing the vector output `v_j` in the layer l+1
@@ -240,23 +235,7 @@ def dynamic_routing(inputs, cap_num_in, cap_num, cap_size_in, cap_size, iter_rou
 
     # [1152, 10, 1, 1]
     b_ij = tf.zeros([cap_num_in, cap_num, 1, 1], dtype=np.float32)
-
-    W = tf.get_variable('Weight', shape=(1, cap_num_in, cap_size*cap_num, cap_size_in, 1), dtype=tf.float32,
-                        initializer=tf.random_normal_initializer(stddev=stddev))
     biases = tf.get_variable('bias', shape=(1, 1, cap_num, cap_size, 1))
-
-    # Eq.2, calc u_hat
-    # Since tf.matmul is a time-consuming op,
-    # A better solution is using element-wise multiply, reduce_sum and reshape
-    # ops instead. Matmul [a, b] x [b, c] is equal to a series ops as
-    # element-wise multiply [a*c, b] * [a*c, b], reduce_sum at axis=1 and
-    # reshape to [a, c]
-    inputs = tf.tile(inputs, [1, 1, 160, 1, 1])
-    # now inputs shape is [batch_size, 1152, 160, 8, 1]
-    #      and w shape is [1, 1152, 160, 8, 1]
-
-    u_hat = tf.reduce_sum(W * inputs, axis=3, keepdims=True)
-    u_hat = tf.reshape(u_hat, shape=[-1, 1152, 10, 16, 1])
 
     # In forward, u_hat_stopped = u_hat; in backward, no gradient passed back from u_hat_stopped to u_hat
     u_hat_stopped = tf.stop_gradient(u_hat, name='stop_gradient')
@@ -272,7 +251,8 @@ def dynamic_routing(inputs, cap_num_in, cap_num, cap_size_in, cap_size, iter_rou
             if r_iter == iter_routing - 1:
                 # line 5:
                 # weighting u_hat with c_ij, element-wise in the last two dims
-                # => [batch_size, 1152, 10, 16, 1]
+                # => [batch_size,1152,10,16,1]
+                # [1152,10,1,1]*[128,1152,10,16,1]
                 s_j = tf.multiply(c_ij, u_hat)
                 # then sum in the second dim, resulting in [batch_size, 1, 10, 16, 1]
                 s_j = tf.reduce_sum(s_j, axis=1, keepdims=True) + biases

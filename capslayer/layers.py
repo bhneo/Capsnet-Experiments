@@ -9,6 +9,7 @@ from functools import reduce
 from data_input.utils import get_transformation_matrix_shape
 from capslayer.ops import routing
 from capslayer.ops import dynamic_routing
+from capslayer.ops import compute_u_hat
 from capslayer.ops import squash
 from capslayer.ops import _update_routing
 from capslayer import variables
@@ -48,10 +49,10 @@ def fully_connected(inputs, activation,
     return pose, activation
 
 
-def fully_connected_v1(inputs, cap_num, cap_size):
+def vector_fully_connected(inputs, cap_num, cap_size):
     """
 
-    :param inputs: [batch_size, cap_num_in, cap_size_in, 1]
+    :param inputs: [batch_size, cap_num_in, cap_size_in]
     :param cap_num: the number of the output caps
     :param cap_size: the size of the output caps
     :return: the result of this layer
@@ -59,10 +60,13 @@ def fully_connected_v1(inputs, cap_num, cap_size):
     input_shape = inputs.get_shape().as_list()
     cap_num_in = input_shape[1]
     cap_size_in = input_shape[2]
-    inputs = tf.reshape(inputs, shape=(-1, cap_num_in, 1, cap_size_in, 1))
+    # to [batch_size, cap_num_in, cap_size_in, 1]
+    inputs = tf.expand_dims(inputs, -1)
+    # get u_hat [batch_size, cap_num_in, cap_num, cap_size]
+    u_hat = compute_u_hat(inputs, cap_num_in, cap_num, cap_size_in, cap_size)
 
     with tf.variable_scope('routing'):
-        capsules = dynamic_routing(inputs, cap_num_in, cap_num, cap_size_in, cap_size)
+        capsules = dynamic_routing(u_hat, cap_num_in, cap_num, cap_size)
         capsules = tf.squeeze(capsules, axis=1)
     return capsules
 
@@ -208,7 +212,7 @@ def _depthwise_conv3d(input_tensor,
         return conv_reshaped, conv_shape, input_shape
 
 
-def vector_primary_caps(inputs, filters, kernel_size=9, strides=2, cap_size=8, activation=tf.nn.relu):
+def vector_primary_caps(inputs, filters, kernel_size=9, strides=2, cap_size=8, do_routing=False):
     """build primary caps layer according to the 1st paper
 
     :param inputs: the input tensor, shape is [batch_size, width, height, channels]
@@ -216,19 +220,22 @@ def vector_primary_caps(inputs, filters, kernel_size=9, strides=2, cap_size=8, a
     :param kernel_size: ...
     :param strides: ...
     :param cap_size:
-    :param activation:
+    :param do_routing: whether do routing in primary caps layer
     :return: caps: [batch_size, caps_num, caps_atoms]
 
     """
     # input [batch_size, 20, 20, 256]
-    capsules = tf.layers.conv2d(inputs, filters * cap_size, kernel_size, strides, padding='VALID',
-                                activation=activation)
-
+    capsules = tf.layers.conv2d(inputs, filters * cap_size, kernel_size, strides, padding='VALID')
+    # now [batch_size, 6, 6, 256]
     shape = capsules.get_shape().as_list()
     # get cap number by height*width*channels
     cap_num = np.prod(shape[1:3]) * filters
-    # from [batch_size, width, height, channels] to [batch_size, cap_num, cap_size]
-    capsules = tf.reshape(capsules, (-1, cap_num, cap_size))
+
+    if do_routing:
+        pass
+    else:
+        # from [batch_size, width, height, channels] to [batch_size, cap_num, cap_size]
+        capsules = tf.reshape(capsules, (-1, cap_num, cap_size))
 
     return squash(capsules)
 
