@@ -60,8 +60,7 @@ def vector_fully_connected(inputs, cap_num, cap_size):
     input_shape = inputs.get_shape().as_list()
     cap_num_in = input_shape[1]
     cap_size_in = input_shape[2]
-    # to [batch_size, cap_num_in, cap_size_in, 1]
-    inputs = tf.expand_dims(inputs, -1)
+
     # get u_hat [batch_size, cap_num_in, cap_num, cap_size]
     u_hat = compute_u_hat(inputs, cap_num_in, cap_num, cap_size_in, cap_size)
 
@@ -232,12 +231,12 @@ def vector_primary_caps(inputs, filters, kernel_size=9, strides=2, cap_size=8, d
     cap_num = np.prod(shape[1:3]) * filters
 
     if do_routing:
-        pass
+        cap_num = shape[3]//cap_size  # 32
+        capsules = tf.reshape(capsules, (-1, shape[1], shape[2], 1, cap_num, cap_size))
+        return dynamic_routing(capsules, 1, cap_num, cap_size, iter_routing=1)
     else:
         # from [batch_size, width, height, channels] to [batch_size, cap_num, cap_size]
-        capsules = tf.reshape(capsules, (-1, cap_num, cap_size))
-
-    return squash(capsules)
+        return squash(tf.reshape(capsules, (-1, cap_num, cap_size)))
 
 
 def matrix_primary_caps(inputs, filters,

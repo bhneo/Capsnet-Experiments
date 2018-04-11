@@ -34,28 +34,24 @@ def _squash(input_tensor, axis=2):
     return (input_tensor / norm) * (norm_squared / (1 + norm_squared))
 
 
-def _leaky_routing(logits, output_dim):
-    """Adds extra dimmension to routing logits.
-
-  This enables active capsules to be routed to the extra dim if they are not a
-  good fit for any of the capsules in layer above.
-
-  Args:
-    logits: The original logits. shape is
+def _leaky_routing(b_ij, output_dim, axis):
+    """
+    This enables active capsules to be routed to the extra dim if they are not a
+    good fit for any of the capsules in layer above.Adds extra dimension to routing b_ij.
+    :param b_ij: The original b_ij shape is
       [input_capsule_num, output_capsule_num] if fully connected. Otherwise, it
-      has two more dimmensions.
-    output_dim: The number of units in the second dimmension of logits.
+       has two more dimensions.
+    :param output_dim: The number of units in the second dimension of b_ij.
+    :param axis:
+    :return: Routing probabilities for each pair of capsules. Same shape as b_ij.
+    """
 
-  Returns:
-    Routing probabilities for each pair of capsules. Same shape as logits.
-  """
-
-    # leak is a zero matrix with same shape as logits except dim(2) = 1 because
+    # leak is a zero matrix with same shape as b_ij except dim(2) = 1 because
     # of the reduce_sum.
-    leak = tf.zeros_like(logits, optimize=True)
-    leak = tf.reduce_sum(leak, axis=2, keepdims=True)
-    leaky_logits = tf.concat([leak, logits], axis=2)
-    leaky_routing = tf.nn.softmax(leaky_logits, dim=2)
+    leak = tf.zeros_like(b_ij, optimize=True)
+    leak = tf.reduce_sum(leak, axis=axis, keepdims=True)
+    leaky_b_ij = tf.concat([leak, b_ij], axis=1)
+    leaky_routing = tf.nn.softmax(leaky_b_ij, dim=1)
     return tf.split(leaky_routing, [1, output_dim], 2)[1]
 
 
@@ -191,7 +187,7 @@ def _update_routing_v1(votes,
 def compute_u_hat(inputs, cap_num_in, cap_num, cap_size_in, cap_size, stddev=0.1, ):
     """
     compute the u_hat by different ways
-    :param inputs: [128, 1152, 8, 1]
+    :param inputs: [128, 1152, 8]
     :param cap_num_in:
     :param cap_num:
     :param cap_size_in:
@@ -202,6 +198,8 @@ def compute_u_hat(inputs, cap_num_in, cap_num, cap_size_in, cap_size, stddev=0.1
     w = tf.get_variable('Weight', shape=(cap_num_in, cap_size_in, cap_size * cap_num), dtype=tf.float32,
                         initializer=tf.random_normal_initializer(stddev=stddev))
 
+    # to [batch_size, cap_num_in, cap_size_in, 1]
+    inputs = tf.expand_dims(inputs, -1)
     # Since tf.matmul is a time-consuming op,
     # A better solution is using element-wise multiply, reduce_sum and reshape
     # ops instead. Matmul [a, b] x [b, c] is equal to a series ops as
@@ -211,20 +209,21 @@ def compute_u_hat(inputs, cap_num_in, cap_num, cap_size_in, cap_size, stddev=0.1
     # now inputs shape is [batch_size,1152,8,160] or [128,1152,8,160]
     #      and w shape is [1152, 8, 160]
 
-    u_hat = tf.reduce_sum(w * inputs, axis=2)
+    u_hat = tf.reduce_sum(inputs * w, axis=2)
     u_hat = tf.reshape(u_hat, shape=[-1, cap_num_in, cap_num, cap_size])
 
     return u_hat
 
 
-def dynamic_routing(u_hat, cap_num_in, cap_num, cap_size, iter_routing=3):
+def dynamic_routing(u_hat, cap_num_in, cap_num, cap_size, iter_routing=3, leaky=False):
     """ The routing algorithm.
 
-        :param u_hat: [128, 1152, 10, 16]
+        :param u_hat: [128, 1152, 10, 16] or [128, 6, 6, 1, 32, 8] ...
         :param cap_num_in: the number of input caps
         :param cap_num: the number of output caps
         :param cap_size: the cap size of the output caps
         :param iter_routing:
+        :param leaky:
     Returns:
         A Tensor of shape [batch_size, num_caps_l_plus_1, length(v_j)=16, 1]
         representing the vector output `v_j` in the layer l+1
@@ -233,50 +232,56 @@ def dynamic_routing(u_hat, cap_num_in, cap_num, cap_size, iter_routing=3):
         v_j the vector output of capsule j in the layer l+1.
      """
 
+    u_hat_t_shape = []
+    r_t_shape = []
+    u_hat_shape = u_hat.get_shape().as_list()
+    for i in range(len(u_hat_shape)):
+        if i == len(u_hat_shape)-1:
+            u_hat_t_shape = [i] + u_hat_t_shape
+            # now [-1,0,1,2,...]
+            r_t_shape += [0]
+            # now [1,2,...,0]
+        else:
+            u_hat_t_shape += [i]
+            r_t_shape += [i+1]
+    # [128,6,6,1,32,8]->[8,128,6,6,1,32]
+    # [128,1152,10,16]->[16,128,1152,10]
+    u_hat_trans = tf.transpose(u_hat, u_hat_t_shape)
+
     # [1152, 10]
-    b_ij = tf.zeros([cap_num_in, cap_num], dtype=np.float32)
+    b_ij_shape = tf.stack(tf.shape(u_hat)[0], cap_num_in, cap_num)
+    b_ij = tf.zeros(b_ij_shape, dtype=np.float32)
     biases = tf.get_variable('bias', shape=(cap_num, cap_size))
 
-    # In forward, u_hat_stopped = u_hat; in backward, no gradient passed back from u_hat_stopped to u_hat
-    u_hat_stopped = tf.stop_gradient(u_hat, name='stop_gradient')
+    def _routing(_i, _b_ij):  # b_ij [128,1152,10] or [128,1,32]
+        if leaky:
+            c_ij = _leaky_routing(_b_ij, cap_num, axis=2)
+        else:
+            c_ij = tf.nn.softmax(_b_ij, axis=2)
 
-    # line 3,for r iterations do
-    for r_iter in range(iter_routing):
-        with tf.variable_scope('iter_' + str(r_iter)):
-            # line 4:
-            # => [1152, 10, 1, 1]
-            c_ij = tf.nn.softmax(b_ij, axis=1)
+        s_j = tf.multiply(c_ij, u_hat_trans)
+        # [8,128,6,6,1,32]->[128,6,6,1,32,8]
+        # [16,128,1152,10]->[128,1152,10,16]
+        s_j = tf.transpose(s_j, r_t_shape)
+        s_j = tf.reduce_sum(s_j, axis=-3, keepdims=True) + biases
+        v_j = squash(tf.squeeze(s_j, -3))
+        # now [128,6,6,32,8] or [128,10,16]
 
-            # At last iteration, use `u_hat` in order to receive gradients from the following graph
-            if r_iter == iter_routing - 1:
-                # line 5:
-                # weighting u_hat with c_ij, element-wise in the last two dims
-                # => [batch_size,1152,10,16,1]
-                # [1152,10,1,1]*[128,1152,10,16,1]
-                s_j = tf.multiply(c_ij, u_hat)
-                # then sum in the second dim, resulting in [batch_size, 1, 10, 16, 1]
-                s_j = tf.reduce_sum(s_j, axis=1, keepdims=True) + biases
-                # now s_j shape is [batch_size, 1, 10, 16, 1]
+        tile_shape = np.ones(len(u_hat_shape), dtype=tf.int32).tolist()
+        tile_shape[-3] = cap_num_in
+        s_j_tile = tf.tile(s_j, tile_shape)
+        # [128,6,6,1,32,8]*[128,6,6,1,32,8] or [128,1152,10,16]*[128,1152,10,16]
+        # -> [128,6,6,1,32] or [128,1152,10]
+        distance = tf.reduce_sum(u_hat * s_j_tile, -1)
+        _b_ij += distance
+        return _i+1, _b_ij, v_j
 
-                # line 6:
-                # squash using Eq.1,
-                v_j = squash(s_j)
-                # now v_j shape is [batch_size, 1, 10, 16, 1]
-            elif r_iter < iter_routing - 1:  # Inner iterations, do not apply backpropagation
-                s_j = tf.multiply(c_ij, u_hat_stopped)
-                s_j = tf.reduce_sum(s_j, axis=1, keepdims=True) + biases
-                v_j = squash(s_j)
-
-                # line 7:
-                # reshape & tile v_j from [batch_size ,1, 10, 16, 1] to [batch_size, 1152, 10, 16, 1]
-                # then matmul in the last tow dim: [16, 1].T x [16, 1] => [1, 1], reduce mean in the
-                # batch_size dim, resulting in [1, 1152, 10, 1, 1]
-                v_j_tiled = tf.tile(v_j, [1, 3, 1, 1, 1])
-                u_produce_v = tf.reduce_sum(u_hat_stopped * v_j_tiled, axis=3, keepdims=True)
-                assert u_produce_v.get_shape() == [batch_size, 1152, 10, 1, 1]
-
-                # b_IJ += tf.reduce_sum(u_produce_v, axis=0, keep_dims=True)
-                b_ij += u_produce_v
+    i = tf.constant(0, dtype=tf.int32)
+    _, b_ij, v_j = tf.while_loop(
+        lambda _i, _b_ij, _v_j: _i < iter_routing,
+        _routing,
+        loop_vars=[i, b_ij],
+        swap_memory=True)
 
     return v_j
 
