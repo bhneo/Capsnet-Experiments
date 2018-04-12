@@ -12,6 +12,18 @@ def train(model, supervisor):
     train_batch = tf.data.Dataset.from_tensor_slices((trX, trY)).batch(cfg.batch_size).repeat().make_one_shot_iterator().get_next()
     valid_batch = tf.data.Dataset.from_tensor_slices((valX, valY)).batch(cfg.batch_size).repeat().make_one_shot_iterator().get_next()
 
+    # if cfg.dataset == 'mnist' or cfg.dataset == 'fashion-mnist':
+    #     tf.logging.info(' Loading Graph...')
+    #     model(inputs, num_label=10, is_training=True)
+    # elif cfg.dataset == 'smallNORB':
+    #
+    # elif cfg.dataset == 'cifar10':
+    #
+    # else:
+    #     raise EnvironmentError('no such data set')
+
+    tf.logging.info(' Graph loaded')
+
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
     with supervisor.managed_session(config=config) as sess:
@@ -91,17 +103,7 @@ def main(_):
     else:
         from models.baseline import Model
 
-    if cfg.dataset == 'mnist' or cfg.dataset == 'fashion-mnist':
-        tf.logging.info(' Loading Graph...')
-        model = Model(height=28, width=28, channels=1, num_label=10)
-    elif cfg.dataset == 'smallNORB':
-        model = Model(height=32, width=32, channels=3, num_label=5)
-    elif cfg.dataset == 'cifar10':
-        model = Model(height=32, width=32, channels=3, num_label=10)
-    else:
-        raise EnvironmentError('no such data set')
-
-    tf.logging.info(' Graph loaded')
+    model = Model()
 
     sv = tf.train.Supervisor(graph=model.graph, logdir=cfg.logdir, save_model_secs=0)
 

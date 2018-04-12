@@ -1,8 +1,3 @@
-"""
-License: Apache-2.0
-Author: Huadong Liao
-E-mail: naturomics.liao@gmail.com
-"""
 from models.base_model import BaseModel
 from capslayer.ops import epsilon
 
@@ -13,27 +8,23 @@ import capslayer
 class CapsNet(BaseModel):
 
     def __init__(self,
-                 inputs,
-                 num_label=10,
-                 is_training=True,
                  m_plus=0.9,
                  m_minus=0.1,
                  lambda_val=0.5,
                  reconstruction=False,
                  regularization_scale=0.392,
                  mask_with_y=False):
-        """
-        Args:
 
-            num_label: Integer, the category number.
-        """
         self.m_plus = m_plus
         self.m_minus = m_minus
         self.lambda_val = lambda_val
         self.reconstruction = reconstruction
         self.regularization_scale = regularization_scale
         self.mask_with_y = mask_with_y
-        BaseModel.__init__(self, inputs, num_label, is_training)
+        BaseModel.__init__(self)
+
+    def __call__(self, inputs, num_label=10, is_training=True):
+        BaseModel.__call__(self, inputs, num_label, is_training)
 
     def build_arch(self, images):
         outputs = {}

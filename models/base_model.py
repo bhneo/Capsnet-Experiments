@@ -10,17 +10,18 @@ import tensorflow as tf
 class BaseModel(object):
     __metaclass__ = abc.ABCMeta
 
-    def __init__(self, inputs, num_label=10, is_training=True):
-        """ init model
+    def __call__(self, inputs, num_label=10, is_training=True):
+        """
 
         :param inputs: input data, formatted as (X, y)
         :param num_label:
         :param is_training:
+        :return:
         """
         self.height, self.width, self.channels = inputs.get_shape().as_list()[1, 2, 3]
         self.num_label = num_label
-        self.summary_arr = []
 
+        self.summary_arr = []
         self.graph = tf.Graph()
         with self.graph.as_default():
             self.images, self.labels = inputs
