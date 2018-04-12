@@ -66,7 +66,7 @@ def vector_fully_connected(inputs, cap_num, cap_size):
 
     with tf.variable_scope('routing'):
         capsules = dynamic_routing(u_hat, cap_num_in, cap_num, cap_size)
-        capsules = tf.squeeze(capsules, axis=1)
+        # now [128,10,16]
     return capsules
 
 

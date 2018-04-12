@@ -248,12 +248,12 @@ def dynamic_routing(u_hat, cap_num_in, cap_num, cap_size, iter_routing=3, leaky=
     # [128,1152,10,16]->[16,128,1152,10]
     u_hat_trans = tf.transpose(u_hat, u_hat_t_shape)
 
-    # [1152, 10]
-    b_ij_shape = tf.stack(tf.shape(u_hat)[0], cap_num_in, cap_num)
-    b_ij = tf.zeros(b_ij_shape, dtype=np.float32)
+    # [128,6,6,1,32] or [128,1152,10]
+    b_ij_shape = tf.stack(tf.shape(u_hat)[0:-1])
+    b_ij = tf.zeros(b_ij_shape, dtype=tf.float32)
     biases = tf.get_variable('bias', shape=(cap_num, cap_size))
 
-    def _routing(_i, _b_ij):  # b_ij [128,1152,10] or [128,1,32]
+    def _routing(_i, _b_ij):  # b_ij [128,1152,10] or [128,6,6,1,32]
         if leaky:
             c_ij = _leaky_routing(_b_ij, cap_num, axis=2)
         else:

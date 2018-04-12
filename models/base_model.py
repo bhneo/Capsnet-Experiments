@@ -38,6 +38,7 @@ class BaseModel(object):
                 activations_idx = tf.to_int32(tf.argmax(tf.nn.softmax(outputs['activations'], axis=1), axis=1))
                 correct_prediction = tf.equal(tf.to_int32(self.labels), activations_idx)
                 self.accuracy = tf.reduce_sum(tf.cast(correct_prediction, tf.float32))
+                self.summary('histogram', 'accuracy', self.accuracy)
 
             self.merged_summary = tf.summary.merge(self.summary)
 
@@ -56,15 +57,6 @@ class BaseModel(object):
             self.summary_arr.append(tf.summary.histogram(name, obj))
         elif sum_type == 'image':
             self.summary_arr.append(tf.summary.image(name, obj))
-
-
-
-        train_summary = [
-
-                         tf.summary.histogram('accuracy', self.accuracy)]
-        if self.reconstruction:
-            train_summary.append(tf.summary.scalar('reconstruction_loss', self.reconstruction_err))
-            train_summary.append(tf.summary.scalar('total_loss', self.loss))
 
     @staticmethod
     def create_conv_layers(inputs, filters=256, kernel=9):

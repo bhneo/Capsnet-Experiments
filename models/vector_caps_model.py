@@ -48,44 +48,33 @@ class CapsNet(BaseModel):
         # return digitCaps: [batch_size, num_label, 16, 1], activation: [batch_size, num_label]
         with tf.variable_scope('DigitCaps_layer'):
             digit_caps = capslayer.layers.vector_fully_connected(primary_caps, 10, 16)
+            # now [128,10,16]
             # calc || v_c ||
-            activation = tf.sqrt(tf.reduce_sum(tf.square(digit_caps),
-                                               axis=2, keepdims=True) + epsilon)
+            activation = tf.sqrt(tf.reduce_sum(tf.square(digit_caps), axis=-1) + epsilon)
             outputs['activations'] = activation
+            # activation [128,10]
             self.summary('histogram', 'activation', activation)
 
         if self.reconstruction:
             # 1. Do masking, how:
             with tf.variable_scope('Masking'):
-                # a). do softmax(||v_c||)
-                # [batch_size, 10, 16, 1] => [batch_size, 10, 1, 1]
-                softmax_v = tf.nn.softmax(activation, axis=1)
-
-                # b). pick out the index of max softmax val of the 10 caps
-                # [batch_size, 10, 1, 1] => [batch_size] (index)
-                argmax_idx = tf.to_int32(tf.argmax(softmax_v, axis=1))
-                argmax_idx = tf.reshape(argmax_idx, shape=(-1,))
-
                 # Method 1.
                 if not self.mask_with_y:
-                    # c). indexing
-                    # It's not easy to understand the indexing process with argmax_idx
-                    # as we are 3-dim animal
-                    masked_v = []
-                    for batch_size in range(self.batch_size): # !!!!!!!!!!!!!! error
-                        v = digit_caps[batch_size][argmax_idx[batch_size], :]
-                        masked_v.append(tf.reshape(v, shape=(1, 1, 16, 1)))
-
-                    masked_v = tf.concat(masked_v, axis=0)
+                    # pick out the index of max val of the 10 caps
+                    # [batch_size, 10] => [batch_size] (index)
+                    argmax_idx = tf.to_int32(tf.argmax(activation, axis=1))
+                    argmax_idx = tf.reshape(argmax_idx, shape=(-1, 1))
+                    pre_label = tf.one_hot(argmax_idx, self.labels.get_shape().as_list()[1])
+                    masked_v = tf.multiply(digit_caps, tf.reshape(pre_label, (-1, 10, 1)))
                 # Method 2. masking with true label, default mode
                 else:
-                    # self.masked_v = tf.matmul(tf.squeeze(self.caps2), tf.reshape(self.Y, (-1, 10, 1)), transpose_a=True)
-                    masked_v = tf.multiply(tf.squeeze(digit_caps), tf.reshape(self.labels, (-1, 10, 1)))
+                    masked_v = tf.multiply(digit_caps, tf.reshape(self.labels, (-1, 10, 1)))
 
             # Decoder structure in Fig. 2
             # Reconstructe the MNIST images with 3 FC layers
             # [batch_size, 1, 16, 1] => [batch_size, 16] => [batch_size, 512]
             with tf.variable_scope('Decoder'):
+                # [128,10,16]->[128,160]
                 active_caps = tf.layers.flatten(masked_v)
                 # active_caps = tf.reshape(masked_v, shape=(self.batch_size, -1))
                 fc1 = tf.layers.dense(active_caps, units=512)
@@ -132,13 +121,16 @@ class CapsNet(BaseModel):
             origin = tf.layers.flatten(images)
             squared = tf.square(decoded - origin)
             reconstruction_err = tf.reduce_mean(squared)
+            self.summary('scalar', 'reconstruction_loss', reconstruction_err)
 
             # 3. Total loss
             # The paper uses sum of squared error as reconstruction error, but we
             # have used reduce_mean in `# 2 The reconstruction loss` to calculate
             # mean squared error. In order to keep in line with the paper,the
             # regularization scale should be 0.0005*784=0.392
-            return margin_loss + self.regularization_scale * reconstruction_err
+            total_loss = margin_loss + self.regularization_scale * reconstruction_err
+            self.summary('scalar', 'total_loss', total_loss)
+            return total_loss
         else:
             return margin_loss
 
