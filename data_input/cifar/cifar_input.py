@@ -396,7 +396,7 @@ def extract_data(filenames):
 def extract_train_data(files_dir, valid_size=0.1):
     # 获得训练数据
     filenames = [os.path.join(files_dir, 'data_batch_%d.bin' % i) for i in xrange(1, 6)]
-    labels, images =  extract_data(filenames)
+    labels, images = extract_data(filenames)
 
     indices = np.random.permutation(TRAIN_NUMS)
     valid_idx, train_idx = indices[:TRAIN_NUMS * valid_size], indices[TRAIN_NUMS * valid_size:]
