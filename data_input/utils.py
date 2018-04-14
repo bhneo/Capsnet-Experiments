@@ -1,11 +1,12 @@
 import os
+import sys
 import scipy
 import numpy as np
 import tensorflow as tf
 
 
 def create_train_set(dataset, batch_size=128, n_repeat=-1):
-    tr_image, tr_label, val_image, val_label, num_label = load_data(dataset, is_training=True)
+    tr_image, tr_label, val_image, val_label, num_label, num_batch = load_data(dataset, batch_size, is_training=True)
 
     tr_data_set = tf.data.Dataset.from_tensor_slices((tr_image, tr_label)).repeat(n_repeat).batch(batch_size)
     val_data_set = tf.data.Dataset.from_tensor_slices((val_image, val_label)).repeat(n_repeat).batch(batch_size)
@@ -18,13 +19,13 @@ def create_train_set(dataset, batch_size=128, n_repeat=-1):
     train_iterator = tr_data_set.make_one_shot_iterator()
     val_iterator = val_data_set.make_initializable_iterator()
 
-    return images, labels, train_iterator, val_iterator, handle, num_label
+    return images, labels, train_iterator, val_iterator, handle, num_label, num_batch
 
 
 def create_test_set(dataset, batch_size=128):
-    te_image, te_label, num_label = load_data(dataset, is_training=False)
+    te_image, te_label, num_label, num_batch = load_data(dataset, is_training=False)
     te_data_set = tf.data.Dataset.from_tensor_slices((te_image, te_label)).batch(batch_size)
-    return te_data_set.make_one_shot_iterator().get_next(), num_label
+    return te_data_set.make_one_shot_iterator().get_next(), num_label, num_batch
 
 
 def extract_cifar(files):
@@ -61,93 +62,99 @@ def extract_cifar(files):
     return labels, images
 
 
-def load_cifar10(is_training=True, valid_size=0.1):
+def load_cifar10(batch_size, is_training=True, valid_size=0.1):
     if is_training:
-        files = [os.path.join('data/cifar10/cifar-10-batches-bin', 'data_batch_%d.bin' % i) for i in range(1, 6)]
+        files = [os.path.join(sys.path[0], 'data_input', 'data/cifar10/cifar-10-batches-bin', 'data_batch_%d.bin' % i) for i in range(1, 6)]
         labels, images = extract_cifar(files)
 
         indices = np.random.permutation(50000)
         valid_idx, train_idx = indices[:50000 * valid_size], indices[50000 * valid_size:]
 
-        return images[train_idx], labels[train_idx], images[valid_idx], labels[valid_idx], 10
+        batch_num = 50000 * (1 - valid_size) // batch_size
+
+        return images[train_idx], labels[train_idx], images[valid_idx], labels[valid_idx], 10, batch_num
     else:
         files = [os.path.join('data/cifar10/cifar-10-batches-bin', 'test_batch.bin'), ]
-        return extract_cifar(files), 10
+        return extract_cifar(files), 10, 10000 // batch_size
 
 
-def load_mnist(is_training=True):
-    path = os.path.join('data', 'mnist')
+def load_mnist(batch_size, is_training=True):
+    path = os.path.join(sys.path[0], 'data_input', 'data', 'mnist')
     if is_training:
         fd = open(os.path.join(path, 'train-images-idx3-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
-        trainX = loaded[16:].reshape((60000, 784)).astype(np.float32)
+        images = loaded[16:].reshape((60000, 28, 28, 1)).astype(np.float32)
 
         fd = open(os.path.join(path, 'train-labels-idx1-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
-        trainY = loaded[8:].reshape(60000).astype(np.int32)
+        labels = loaded[8:].reshape(60000).astype(np.int32)
 
-        trX = trainX[:55000] / 255.
-        trY = trainY[:55000]
+        tr_x = images[:55000] / 255.
+        tr_y = labels[:55000]
 
-        valX = trainX[55000:, ] / 255.
-        valY = trainY[55000:]
+        val_x = images[55000:, ] / 255.
+        val_y = labels[55000:]
 
-        return trX, trY, valX, valY, 10
+        batch_num = 55000 // batch_size
+
+        return tr_x, tr_y, val_x, val_y, 10, batch_num
     else:
         fd = open(os.path.join(path, 't10k-images-idx3-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
-        teX = loaded[16:].reshape((10000, 784)).astype(np.float)
+        te_x = loaded[16:].reshape((10000, 28, 28, 1)).astype(np.float)
 
         fd = open(os.path.join(path, 't10k-labels-idx1-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
-        teY = loaded[8:].reshape((10000)).astype(np.int32)
+        te_y = loaded[8:].reshape(10000).astype(np.int32)
 
-        return teX / 255., teY, 10
+        return te_x / 255., te_y, 10, 10000 // batch_size
 
 
-def load_fashion_mnist(is_training=True):
-    path = os.path.join('data', 'fashion-mnist')
+def load_fashion_mnist(batch_size, is_training=True):
+    path = os.path.join(sys.path[0], 'data_input', 'data', 'fashion-mnist')
     if is_training:
         fd = open(os.path.join(path, 'train-images-idx3-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
-        trainX = loaded[16:].reshape((60000, 784)).astype(np.float32)
+        tr_images = loaded[16:].reshape((60000, 28, 28, 1)).astype(np.float32)
 
         fd = open(os.path.join(path, 'train-labels-idx1-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
-        trainY = loaded[8:].reshape((60000)).astype(np.int32)
+        tr_labels = loaded[8:].reshape(60000).astype(np.int32)
 
-        trX = trainX[:55000] / 255.
-        trY = trainY[:55000]
+        tr_x = tr_images[:55000] / 255.
+        tr_y = tr_labels[:55000]
 
-        valX = trainX[55000:, ] / 255.
-        valY = trainY[55000:]
+        val_x = tr_images[55000:, ] / 255.
+        val_y = tr_labels[55000:]
 
-        return trX, trY, valX, valY, 10
+        batch_num = 55000 // batch_size
+
+        return tr_x, tr_y, val_x, val_y, 10, batch_num
     else:
         fd = open(os.path.join(path, 't10k-images-idx3-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
-        teX = loaded[16:].reshape((10000, 784)).astype(np.float)
+        te_x = loaded[16:].reshape((10000, 28, 28, 1)).astype(np.float)
 
         fd = open(os.path.join(path, 't10k-labels-idx1-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
-        teY = loaded[8:].reshape((10000)).astype(np.int32)
+        te_y = loaded[8:].reshape(10000).astype(np.int32)
 
-        return teX / 255., teY, 10
+        return te_x / 255., te_y, 10, 10000 // batch_size
 
 
-def load_smallNORB(is_training=True):
+def load_smallNORB(batch_size, is_training=True):
     pass
 
 
-def load_data(dataset, is_training=True):
+def load_data(dataset, batch_size, is_training=True):
     if dataset == 'mnist':
-        return load_mnist(is_training)
+        return load_mnist(batch_size, is_training)
     elif dataset == 'fashion-mnist':
-        return load_fashion_mnist(is_training)
+        return load_fashion_mnist(batch_size, is_training)
     elif dataset == 'smallNORB':
-        return load_smallNORB(is_training)
+        return load_smallNORB(batch_size, is_training)
     elif dataset == 'cifar10':
-        return load_cifar10(is_training)
+        return load_cifar10(batch_size, is_training)
     else:
         raise Exception('Invalid dataset, please check the name of dataset:', dataset)
 

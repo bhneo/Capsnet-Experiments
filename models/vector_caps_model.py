@@ -62,7 +62,7 @@ class CapsNet(BaseModel):
                     masked_v = tf.multiply(digit_caps, tf.reshape(self.labels, (-1, 10, 1)))
 
             # Decoder structure in Fig. 2
-            # Reconstructe the MNIST images with 3 FC layers
+            # Reconstruct the MNIST images with 3 FC layers
             # [batch_size, 1, 16, 1] => [batch_size, 16] => [batch_size, 512]
             with tf.variable_scope('Decoder'):
                 # [128,10,16]->[128,160]
@@ -83,7 +83,6 @@ class CapsNet(BaseModel):
     def loss(self, inputs, outputs):
         images, one_hot_labels = inputs
         activation = outputs['activations']
-        decoded = outputs['decoded']
         # 1. Margin loss
 
         # max_l = max(0, m_plus-||v_c||)^2
@@ -110,6 +109,7 @@ class CapsNet(BaseModel):
         if self.reconstruction:
             # origin = tf.reshape(images, shape=(self.batch_size, -1))
             origin = tf.layers.flatten(images)
+            decoded = outputs['decoded']
             squared = tf.square(decoded - origin)
             reconstruction_err = tf.reduce_mean(squared)
             self.summary('scalar', 'reconstruction_loss', reconstruction_err)

@@ -33,6 +33,8 @@ flags.DEFINE_float('epsilon', 1e-9, 'void NAN')
 #   environment setting    #
 ############################
 flags.DEFINE_string('dataset', 'mnist', 'The name of dataset [smallNORB, mnist, fashion-mnist]')
+flags.DEFINE_bool('distort', False, 'Distort the image')
+flags.DEFINE_bool('standardization', False, '')
 flags.DEFINE_boolean('is_training', True, 'train or predict phase')
 flags.DEFINE_integer('num_threads', 8, 'number of threads of enqueueing exampls')
 results = os.path.join('models', 'results')

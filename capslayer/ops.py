@@ -253,7 +253,7 @@ def dynamic_routing(u_hat, cap_num_in, cap_num, cap_size, iter_routing=3, leaky=
     b_ij = tf.zeros(b_ij_shape, dtype=tf.float32)
     biases = tf.get_variable('bias', shape=(cap_num, cap_size))
 
-    def _routing(_i, _b_ij):  # b_ij [128,1152,10] or [128,6,6,1,32]
+    def _routing(_i, _b_ij, v_j):  # b_ij [128,1152,10] or [128,6,6,1,32]
         if leaky:
             c_ij = _leaky_routing(_b_ij, cap_num, axis=2)
         else:
@@ -264,10 +264,11 @@ def dynamic_routing(u_hat, cap_num_in, cap_num, cap_size, iter_routing=3, leaky=
         # [16,128,1152,10]->[128,1152,10,16]
         s_j = tf.transpose(s_j, r_t_shape)
         s_j = tf.reduce_sum(s_j, axis=-3, keepdims=True) + biases
-        v_j = squash(tf.squeeze(s_j, -3))
+        _v_j = squash(tf.squeeze(s_j, -3))
         # now [128,6,6,32,8] or [128,10,16]
+        v_j = v_j.write(_i, _v_j)
 
-        tile_shape = np.ones(len(u_hat_shape), dtype=tf.int32).tolist()
+        tile_shape = np.ones(len(u_hat_shape), dtype=np.int32).tolist()
         tile_shape[-3] = cap_num_in
         s_j_tile = tf.tile(s_j, tile_shape)
         # [128,6,6,1,32,8]*[128,6,6,1,32,8] or [128,1152,10,16]*[128,1152,10,16]
@@ -276,14 +277,16 @@ def dynamic_routing(u_hat, cap_num_in, cap_num, cap_size, iter_routing=3, leaky=
         _b_ij += distance
         return _i+1, _b_ij, v_j
 
+    v_j = tf.TensorArray(
+        dtype=tf.float32, size=iter_routing, clear_after_read=False)
     i = tf.constant(0, dtype=tf.int32)
     _, b_ij, v_j = tf.while_loop(
-        lambda _i, _b_ij, _v_j: _i < iter_routing,
+        lambda _i, _b_ij, _: _i < iter_routing,
         _routing,
-        loop_vars=[i, b_ij],
+        loop_vars=[i, b_ij, v_j],
         swap_memory=True)
 
-    return v_j
+    return v_j.read(iter_routing - 1)
 
 
 def routing(vote,

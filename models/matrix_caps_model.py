@@ -22,7 +22,7 @@ class CapsNet(object):
             num_label: Integer, the category number.
         '''
         self.height = height
-        self.width =width
+        self.width = width
         self.channels = channels
         self.num_label = num_label
 

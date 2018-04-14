@@ -25,7 +25,8 @@ class BaseModel(object):
         self.summary_arr = []
         with self.graph.as_default():
             self.images, self.labels = inputs
-            self.height, self.width, self.channels = self.images.get_shape().as_list()[1, 2, 3]
+            image_shape = self.images.get_shape().as_list()
+            self.height, self.width, self.channels = image_shape[1], image_shape[2], image_shape[3]
 
             # 用于评估过程的图像数据预处理
             if distort:
