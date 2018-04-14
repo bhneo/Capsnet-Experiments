@@ -23,8 +23,8 @@ class CapsNet(BaseModel):
         self.mask_with_y = mask_with_y
         BaseModel.__init__(self)
 
-    def __call__(self, inputs, num_label=10, is_training=True):
-        BaseModel.__call__(self, inputs, num_label, is_training)
+    def __call__(self, inputs, num_label=10, is_training=True, distort=False, standardization=False):
+        BaseModel.__call__(self, inputs, num_label, is_training, distort, standardization)
 
     def build_arch(self, images):
         outputs = {}

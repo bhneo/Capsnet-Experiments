@@ -4,9 +4,27 @@ import numpy as np
 import tensorflow as tf
 
 
-def create_dataset(dataset, is_shuffle=True, n_repeates=0):
-    trX, trY, valX, valY = load_data(dataset, is_training=True)
-    tf.data.Dataset.from_tensor_slices((trX, trY))
+def create_train_set(dataset, batch_size=128, n_repeat=-1):
+    tr_image, tr_label, val_image, val_label, num_label = load_data(dataset, is_training=True)
+
+    tr_data_set = tf.data.Dataset.from_tensor_slices((tr_image, tr_label)).repeat(n_repeat).batch(batch_size)
+    val_data_set = tf.data.Dataset.from_tensor_slices((val_image, val_label)).repeat(n_repeat).batch(batch_size)
+
+    handle = tf.placeholder(tf.string, [])
+    feed_iterator = tf.data.Iterator.from_string_handle(handle, tr_data_set.output_types,
+                                                        tr_data_set.output_shapes)
+    images, labels = feed_iterator.get_next()
+    # 创建不同的iterator
+    train_iterator = tr_data_set.make_one_shot_iterator()
+    val_iterator = val_data_set.make_initializable_iterator()
+
+    return images, labels, train_iterator, val_iterator, handle, num_label
+
+
+def create_test_set(dataset, batch_size=128):
+    te_image, te_label, num_label = load_data(dataset, is_training=False)
+    te_data_set = tf.data.Dataset.from_tensor_slices((te_image, te_label)).batch(batch_size)
+    return te_data_set.make_one_shot_iterator().get_next(), num_label
 
 
 def extract_cifar(files):
@@ -51,10 +69,10 @@ def load_cifar10(is_training=True, valid_size=0.1):
         indices = np.random.permutation(50000)
         valid_idx, train_idx = indices[:50000 * valid_size], indices[50000 * valid_size:]
 
-        return images[train_idx], labels[train_idx], images[valid_idx], labels[valid_idx]
+        return images[train_idx], labels[train_idx], images[valid_idx], labels[valid_idx], 10
     else:
         files = [os.path.join('data/cifar10/cifar-10-batches-bin', 'test_batch.bin'), ]
-        return extract_cifar(files)
+        return extract_cifar(files), 10
 
 
 def load_mnist(is_training=True):
@@ -66,7 +84,7 @@ def load_mnist(is_training=True):
 
         fd = open(os.path.join(path, 'train-labels-idx1-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
-        trainY = loaded[8:].reshape((60000)).astype(np.int32)
+        trainY = loaded[8:].reshape(60000).astype(np.int32)
 
         trX = trainX[:55000] / 255.
         trY = trainY[:55000]
@@ -74,7 +92,7 @@ def load_mnist(is_training=True):
         valX = trainX[55000:, ] / 255.
         valY = trainY[55000:]
 
-        return trX, trY, valX, valY
+        return trX, trY, valX, valY, 10
     else:
         fd = open(os.path.join(path, 't10k-images-idx3-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
@@ -84,7 +102,7 @@ def load_mnist(is_training=True):
         loaded = np.fromfile(file=fd, dtype=np.uint8)
         teY = loaded[8:].reshape((10000)).astype(np.int32)
 
-        return teX / 255., teY
+        return teX / 255., teY, 10
 
 
 def load_fashion_mnist(is_training=True):
@@ -104,7 +122,7 @@ def load_fashion_mnist(is_training=True):
         valX = trainX[55000:, ] / 255.
         valY = trainY[55000:]
 
-        return trX, trY, valX, valY
+        return trX, trY, valX, valY, 10
     else:
         fd = open(os.path.join(path, 't10k-images-idx3-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
@@ -114,7 +132,7 @@ def load_fashion_mnist(is_training=True):
         loaded = np.fromfile(file=fd, dtype=np.uint8)
         teY = loaded[8:].reshape((10000)).astype(np.int32)
 
-        return teX / 255., teY
+        return teX / 255., teY, 10
 
 
 def load_smallNORB(is_training=True):
