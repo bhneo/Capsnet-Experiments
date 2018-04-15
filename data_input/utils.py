@@ -5,13 +5,12 @@ import numpy as np
 import tensorflow as tf
 
 
-def create_train_set(dataset, batch_size=128, n_repeat=-1):
+def create_train_set(dataset, handle, batch_size=128, n_repeat=-1):
     tr_image, tr_label, val_image, val_label, num_label, num_batch = load_data(dataset, batch_size, is_training=True)
 
     tr_data_set = tf.data.Dataset.from_tensor_slices((tr_image, tr_label)).repeat(n_repeat).batch(batch_size)
     val_data_set = tf.data.Dataset.from_tensor_slices((val_image, val_label)).repeat(n_repeat).batch(batch_size)
 
-    handle = tf.placeholder(tf.string, [])
     feed_iterator = tf.data.Iterator.from_string_handle(handle, tr_data_set.output_types,
                                                         tr_data_set.output_shapes)
     images, labels = feed_iterator.get_next()
@@ -19,7 +18,7 @@ def create_train_set(dataset, batch_size=128, n_repeat=-1):
     train_iterator = tr_data_set.make_one_shot_iterator()
     val_iterator = val_data_set.make_initializable_iterator()
 
-    return images, labels, train_iterator, val_iterator, handle, num_label, num_batch
+    return images, labels, train_iterator, val_iterator, num_label, num_batch
 
 
 def create_test_set(dataset, batch_size=128):

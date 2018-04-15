@@ -1,5 +1,6 @@
 from models.base_model import BaseModel
 from capslayer.ops import epsilon
+from models.config import cfg
 
 import tensorflow as tf
 import capslayer
@@ -30,15 +31,19 @@ class CapsNet(BaseModel):
         outputs = {}
         with tf.variable_scope('Convolution_layer'):
             # Conv1, return with shape [batch_size, 20, 20, 256]
-            conv = BaseModel.create_conv_layers(images, filters=256, kernel=9)
+            conv = BaseModel.create_conv_layers(images, filters=cfg.conv1_filter, kernel=cfg.conv1_kernel)
 
         # return primaryCaps: [batch_size, 1152, 8], activation: [batch_size, 1152]
         with tf.variable_scope('PrimaryCaps_layer'):
-            primary_caps = capslayer.layers.vector_primary_caps(conv, filters=32, kernel_size=9, strides=2, cap_size=8)
+            primary_caps = capslayer.layers.vector_primary_caps(conv,
+                                                                filters=cfg.pri_caps,
+                                                                kernel_size=cfg.pri_kernel,
+                                                                strides=2,
+                                                                cap_size=cfg.pri_caps_size)
 
         # return digitCaps: [batch_size, num_label, 16, 1], activation: [batch_size, num_label]
         with tf.variable_scope('DigitCaps_layer'):
-            digit_caps = capslayer.layers.vector_fully_connected(primary_caps, 10, 16)
+            digit_caps = capslayer.layers.vector_fully_connected(primary_caps, self.num_label, cfg.digit_caps_size)
             # now [128,10,16]
             # calc || v_c ||
             activation = tf.sqrt(tf.reduce_sum(tf.square(digit_caps), axis=-1) + epsilon)

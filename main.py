@@ -9,17 +9,16 @@ from data_input.utils import create_train_set, create_test_set
 
 def train(model):
     with model.graph.as_default():
-        images, labels, train_iterator, val_iterator, handle, num_label, num_batch = create_train_set(cfg.dataset,
-                                                                                                      cfg.batch_size)
+        handle = tf.placeholder(tf.string, [])
+        images, labels, train_iterator, val_iterator, num_label, num_batch = create_train_set(cfg.dataset, handle,
+                                                                                              cfg.batch_size)
 
         model((images, labels), num_label=num_label, is_training=True, distort=cfg.distort,
               standardization=cfg.standardization)
     tf.logging.info(' Graph loaded')
 
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
     sv = tf.train.Supervisor(graph=model.graph, logdir=cfg.logdir, save_model_secs=0)
-    with sv.managed_session(config=config) as sess:
+    with sv.managed_session() as sess:
         train_writer = tf.summary.FileWriter(cfg.logdir + '/train', sess.graph)
         valid_writer = tf.summary.FileWriter(cfg.logdir + '/valid')
 
@@ -28,7 +27,7 @@ def train(model):
 
         # Print stats
         param_stats = tf.contrib.tfprof.model_analyzer.print_model_analysis(
-            tf.get_default_graph(),
+            model.graph,
             tfprof_options=tf.contrib.tfprof.model_analyzer.TRAINABLE_VARS_PARAMS_STAT_OPTIONS)
         sys.stdout.write('total_params: %d\n' % param_stats.total_parameters)
 
@@ -36,26 +35,26 @@ def train(model):
             sys.stdout.write('Training for epoch ' + str(epoch) + '/' + str(cfg.epoch) + ':')
             sys.stdout.flush()
             global_step = 0
-            if sv.should_stop():
-                print('supervisor stopped!')
-                break
+            # if sv.should_stop():
+            #     print('supervisor stopped!')
+            #     break
 
             for step in tqdm(range(num_batch), total=num_batch, ncols=70, leave=False, unit='b'):
                 global_step = epoch * num_batch + step
 
                 if global_step % cfg.train_sum_freq == 0:
                     # train
-                    _, loss, train_acc, summary_str = sess.run(
-                        [model.train_op, model.loss, model.accuracy, model.train_summary],
-                        {handle: train_handle})
-                    assert not np.isnan(loss), 'Something wrong! loss is nan...'
+                    _, train_acc, summary_str = sess.run(
+                        [model.train_op, model.accuracy, model.merged_summary],
+                        feed_dict={handle: train_handle})
                     train_writer.add_summary(summary_str, global_step)
                     # valid
+                    sess.run(val_iterator.initializer)
                     valid_acc, summary_str = sess.run([model.accuracy, model.merged_summary],
-                                                      {handle: val_handle})
+                                                      feed_dict={handle: val_handle})
                     valid_writer.add_summary(summary_str, global_step)
                 else:
-                    sess.run(model.train_op, {handle: train_handle})
+                    sess.run(model.train_op, feed_dict={handle: train_handle})
 
             if (epoch + 1) % cfg.save_freq == 0:
                 sv.saver.save(sess, cfg.logdir + '/model_epoch_%04d_step_%02d' % (epoch, global_step))
