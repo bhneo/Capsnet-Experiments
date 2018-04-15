@@ -21,7 +21,7 @@ flags.DEFINE_integer('batch_size', 128, 'batch size')
 flags.DEFINE_integer('epoch', 50, 'epoch')
 flags.DEFINE_integer('iter_routing', 3, 'number of iterations in routing algorithm')
 flags.DEFINE_integer('train_sum_freq', 10, 'the frequency of saving train summary(step)')
-flags.DEFINE_integer('save_freq', 3, 'the frequency of saving model(epoch)')
+flags.DEFINE_integer('save_freq', 1, 'the frequency of saving model(epoch)')
 
 flags.DEFINE_float('stddev', 0.01, 'stddev for W initializer')
 flags.DEFINE_float('regularization_scale', 0.392, 'regularization coefficient for reconstruction loss, default to 0.0005*784=0.392')

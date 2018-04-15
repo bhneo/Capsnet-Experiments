@@ -52,7 +52,7 @@ class BaseModel(object):
             with tf.variable_scope('accuracy'):
                 activations_idx = tf.to_int32(tf.argmax(tf.nn.softmax(outputs['activations'], axis=1), axis=1))
                 correct_prediction = tf.equal(tf.to_int32(self.labels), activations_idx)
-                self.accuracy = tf.reduce_sum(tf.cast(correct_prediction, tf.float32))
+                self.accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
                 self.summary('scalar', 'accuracy', self.accuracy)
 
             self.merged_summary = tf.summary.merge(self.summary_arr)

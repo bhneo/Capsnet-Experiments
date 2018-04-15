@@ -8,6 +8,7 @@ from data_input.utils import create_train_set, create_test_set
 
 
 def train(model):
+    tf.reset_default_graph()
     with model.graph.as_default():
         handle = tf.placeholder(tf.string, [])
         images, labels, train_iterator, val_iterator, num_label, num_batch = create_train_set(cfg.dataset, handle,
@@ -31,8 +32,8 @@ def train(model):
             tfprof_options=tf.contrib.tfprof.model_analyzer.TRAINABLE_VARS_PARAMS_STAT_OPTIONS)
         sys.stdout.write('total_params: %d\n' % param_stats.total_parameters)
 
-        for epoch in range(1, cfg.epoch+1):
-            sys.stdout.write('Training for epoch ' + str(epoch) + '/' + str(cfg.epoch) + ':')
+        for epoch in range(0, cfg.epoch):
+            sys.stdout.write('Training for epoch ' + str(epoch+1) + '/' + str(cfg.epoch) + ':')
             sys.stdout.flush()
             global_step = 0
             # if sv.should_stop():
