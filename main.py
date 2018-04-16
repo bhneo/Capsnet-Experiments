@@ -32,19 +32,19 @@ def train(model):
             last_epoch = 0
             last_step = 0
 
+        init_op = tf.global_variables_initializer()
         saver = tf.train.Saver()
-        mon_sess = tf.train.MonitoredTrainingSession()
-
-        with mon_sess:
-            train_writer = tf.summary.FileWriter(cfg.logdir + '/train', mon_sess.graph)
+        with tf.Session() as sess:
+            sess.run(init_op)
+            train_writer = tf.summary.FileWriter(cfg.logdir + '/train', sess.graph)
             valid_writer = tf.summary.FileWriter(cfg.logdir + '/valid')
 
-            train_handle = mon_sess.run(train_iterator.string_handle())
-            val_handle = mon_sess.run(val_iterator.string_handle())
+            train_handle = sess.run(train_iterator.string_handle())
+            val_handle = sess.run(val_iterator.string_handle())
 
             if ckpt and ckpt.model_checkpoint_path:
                 # Restores from checkpoint
-                saver.restore(mon_sess, ckpt.model_checkpoint_path)
+                saver.restore(sess, ckpt.model_checkpoint_path)
 
             # Print stats
             param_stats = tf.contrib.tfprof.model_analyzer.print_model_analysis(
@@ -55,30 +55,27 @@ def train(model):
             for epoch in range(last_epoch, cfg.epoch):
                 sys.stdout.write('Training for epoch ' + str(epoch+1) + '/' + str(cfg.epoch) + ':')
                 sys.stdout.flush()
-                if mon_sess.should_stop():
-                    print('supervisor stopped!')
-                    break
 
                 bar = tqdm(range(last_step, num_batch), total=num_batch, ncols=100, leave=False, unit='b')
                 for _ in bar:
                     if global_step % cfg.save_summaries_steps == 0:
                         # train
-                        _, train_acc, summary_str = mon_sess.run(
+                        _, train_acc, summary_str = sess.run(
                             [model.train_op, model.accuracy, model.merged_summary],
                             feed_dict={handle: train_handle})
                         train_writer.add_summary(summary_str, global_step)
                         # valid
-                        mon_sess.run(val_iterator.initializer)
-                        valid_acc, summary_str = mon_sess.run([model.accuracy, model.merged_summary],
-                                                              feed_dict={handle: val_handle})
+                        sess.run(val_iterator.initializer)
+                        valid_acc, summary_str = sess.run([model.accuracy, model.merged_summary],
+                                                          feed_dict={handle: val_handle})
                         valid_writer.add_summary(summary_str, global_step)
                         bar.set_description('tr_acc:{} val_acc:{}'.format(train_acc, valid_acc))
                     else:
-                        mon_sess.run(model.train_op, feed_dict={handle: train_handle})
+                        sess.run(model.train_op, feed_dict={handle: train_handle})
 
                     global_step += 1
                     if global_step % cfg.save_checkpoint_steps == 0:
-                        saver.save(mon_sess, cfg.logdir + '/model.ckpt', global_step=global_step)
+                        saver.save(sess, cfg.logdir + '/model.ckpt', global_step=global_step)
 
             train_writer.close()
             valid_writer.close()
@@ -91,7 +88,9 @@ def evaluation(model):
         saver = tf.train.Saver()
     num_te_batch = len(labels) / cfg.batch_size
 
+    init_op = tf.global_variables_initializer()
     with tf.Session() as sess:
+        sess.run(init_op)
         saver.restore(sess, tf.train.latest_checkpoint(cfg.logdir))
         tf.logging.info('Model restored!')
 
