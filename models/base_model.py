@@ -43,11 +43,11 @@ class BaseModel(object):
             outputs = self.build_arch(self.images)
 
             if is_training:
-                loss = self.loss((self.images, self.one_hot_labels), outputs)
+                self.loss = self.build_loss((self.images, self.one_hot_labels), outputs)
 
                 self.global_step = tf.Variable(1, name='global_step', trainable=False)
                 self.optimizer = tf.train.AdamOptimizer()
-                self.train_op = self.optimizer.minimize(loss, global_step=self.global_step)
+                self.train_op = self.optimizer.minimize(self.loss, global_step=self.global_step)
 
             with tf.variable_scope('accuracy'):
                 activations_idx = tf.to_int32(tf.argmax(tf.nn.softmax(outputs['activations'], axis=1), axis=1))
@@ -62,7 +62,7 @@ class BaseModel(object):
         raise NotImplementedError('Not implemented')
 
     @abc.abstractclassmethod
-    def loss(self, inputs, outputs):
+    def build_loss(self, inputs, outputs):
         raise NotImplementedError('Not implemented')
 
     def summary(self, sum_type, name, obj):

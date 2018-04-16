@@ -1,6 +1,6 @@
 from models.base_model import BaseModel
 from capslayer.ops import epsilon
-from models.config import cfg
+from config import cfg
 
 import tensorflow as tf
 import capslayer
@@ -85,7 +85,7 @@ class CapsNet(BaseModel):
 
         return outputs
 
-    def loss(self, inputs, outputs):
+    def build_loss(self, inputs, outputs):
         images, one_hot_labels = inputs
         activation = outputs['activations']
         # 1. Margin loss

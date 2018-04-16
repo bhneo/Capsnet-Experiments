@@ -1,10 +1,11 @@
 import sys
-import numpy as np
-import tensorflow as tf
 
+import os
+import tensorflow as tf
 from tqdm import tqdm
-from models.config import cfg
+
 from data_input.utils import create_train_set, create_test_set
+from config import cfg
 
 
 def train(model):
@@ -16,67 +17,86 @@ def train(model):
 
         model((images, labels), num_label=num_label, is_training=True, distort=cfg.distort,
               standardization=cfg.standardization)
-    tf.logging.info(' Graph loaded')
 
-    sv = tf.train.Supervisor(graph=model.graph, logdir=cfg.logdir, save_model_secs=0)
-    with sv.managed_session() as sess:
-        train_writer = tf.summary.FileWriter(cfg.logdir + '/train', sess.graph)
-        valid_writer = tf.summary.FileWriter(cfg.logdir + '/valid')
+        tf.logging.info(' Graph loaded')
 
-        train_handle = sess.run(train_iterator.string_handle())
-        val_handle = sess.run(val_iterator.string_handle())
-
-        # Print stats
-        param_stats = tf.contrib.tfprof.model_analyzer.print_model_analysis(
-            model.graph,
-            tfprof_options=tf.contrib.tfprof.model_analyzer.TRAINABLE_VARS_PARAMS_STAT_OPTIONS)
-        sys.stdout.write('total_params: %d\n' % param_stats.total_parameters)
-
-        for epoch in range(0, cfg.epoch):
-            sys.stdout.write('Training for epoch ' + str(epoch+1) + '/' + str(cfg.epoch) + ':')
-            sys.stdout.flush()
+        ckpt = tf.train.get_checkpoint_state(cfg.logdir)
+        if ckpt and ckpt.model_checkpoint_path:
+            # Restores from checkpoint
+            ckpt_name = os.path.basename(ckpt.model_checkpoint_path)
+            global_step = int(ckpt_name.split('-')[-1])
+            last_epoch = global_step // num_batch
+            last_step = global_step % num_batch
+        else:
             global_step = 0
-            # if sv.should_stop():
-            #     print('supervisor stopped!')
-            #     break
+            last_epoch = 0
+            last_step = 0
 
-            for step in tqdm(range(num_batch), total=num_batch, ncols=70, leave=False, unit='b'):
-                global_step = epoch * num_batch + step
+        saver = tf.train.Saver()
+        mon_sess = tf.train.MonitoredTrainingSession()
 
-                if global_step % cfg.train_sum_freq == 0:
-                    # train
-                    _, train_acc, summary_str = sess.run(
-                        [model.train_op, model.accuracy, model.merged_summary],
-                        feed_dict={handle: train_handle})
-                    train_writer.add_summary(summary_str, global_step)
-                    # valid
-                    sess.run(val_iterator.initializer)
-                    valid_acc, summary_str = sess.run([model.accuracy, model.merged_summary],
-                                                      feed_dict={handle: val_handle})
-                    valid_writer.add_summary(summary_str, global_step)
-                else:
-                    sess.run(model.train_op, feed_dict={handle: train_handle})
+        with mon_sess:
+            train_writer = tf.summary.FileWriter(cfg.logdir + '/train', mon_sess.graph)
+            valid_writer = tf.summary.FileWriter(cfg.logdir + '/valid')
 
-            if (epoch + 1) % cfg.save_freq == 0:
-                sv.saver.save(sess, cfg.logdir + '/model_epoch_%04d_step_%02d' % (epoch, global_step))
+            train_handle = mon_sess.run(train_iterator.string_handle())
+            val_handle = mon_sess.run(val_iterator.string_handle())
 
-        train_writer.close()
-        valid_writer.close()
+            if ckpt and ckpt.model_checkpoint_path:
+                # Restores from checkpoint
+                saver.restore(mon_sess, ckpt.model_checkpoint_path)
+
+            # Print stats
+            param_stats = tf.contrib.tfprof.model_analyzer.print_model_analysis(
+                model.graph,
+                tfprof_options=tf.contrib.tfprof.model_analyzer.TRAINABLE_VARS_PARAMS_STAT_OPTIONS)
+            sys.stdout.write('total_params: %d\n' % param_stats.total_parameters)
+
+            for epoch in range(last_epoch, cfg.epoch):
+                sys.stdout.write('Training for epoch ' + str(epoch+1) + '/' + str(cfg.epoch) + ':')
+                sys.stdout.flush()
+                if mon_sess.should_stop():
+                    print('supervisor stopped!')
+                    break
+
+                bar = tqdm(range(last_step, num_batch), total=num_batch, ncols=100, leave=False, unit='b')
+                for _ in bar:
+                    if global_step % cfg.save_summaries_steps == 0:
+                        # train
+                        _, train_acc, summary_str = mon_sess.run(
+                            [model.train_op, model.accuracy, model.merged_summary],
+                            feed_dict={handle: train_handle})
+                        train_writer.add_summary(summary_str, global_step)
+                        # valid
+                        mon_sess.run(val_iterator.initializer)
+                        valid_acc, summary_str = mon_sess.run([model.accuracy, model.merged_summary],
+                                                              feed_dict={handle: val_handle})
+                        valid_writer.add_summary(summary_str, global_step)
+                        bar.set_description('tr_acc:{} val_acc:{}'.format(train_acc, valid_acc))
+                    else:
+                        mon_sess.run(model.train_op, feed_dict={handle: train_handle})
+
+                    global_step += 1
+                    if global_step % cfg.save_checkpoint_steps == 0:
+                        saver.save(mon_sess, cfg.logdir + '/model.ckpt', global_step=global_step)
+
+            train_writer.close()
+            valid_writer.close()
 
 
 def evaluation(model):
     with model.graph.as_default():
         images, labels, num_label = create_test_set(cfg.dataset, cfg.batch_size)
         model((images, labels), num_label=num_label, is_training=False)
+        saver = tf.train.Saver()
     num_te_batch = len(labels) / cfg.batch_size
-    sv = tf.train.Supervisor(graph=model.graph, logdir=cfg.logdir, save_model_secs=0)
 
-    with sv.managed_session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
-        sv.saver.restore(sess, tf.train.latest_checkpoint(cfg.logdir))
+    with tf.Session() as sess:
+        saver.restore(sess, tf.train.latest_checkpoint(cfg.logdir))
         tf.logging.info('Model restored!')
 
         test_acc = 0
-        for i in tqdm(range(num_te_batch), total=num_te_batch, ncols=70, leave=False, unit='b'):
+        for _ in tqdm(range(num_te_batch), total=num_te_batch, ncols=70, leave=False, unit='b'):
             acc = sess.run(model.accuracy)
             test_acc += acc
         test_acc = test_acc / (cfg.batch_size * num_te_batch)
