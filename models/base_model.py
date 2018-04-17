@@ -23,39 +23,37 @@ class BaseModel(object):
         """
         self.num_label = num_label
         self.summary_arr = []
-        with self.graph.as_default():
+
+        with tf.name_scope("Pre_process"):
             self.images, self.labels = inputs
             image_shape = self.images.get_shape().as_list()
             self.height, self.width, self.channels = image_shape[1], image_shape[2], image_shape[3]
-
             # 用于评估过程的图像数据预处理
             if distort:
                 # 为图像添加padding = 4，图像尺寸变为[32+4,32+4],为后面的随机裁切留出位置
                 padded_image = tf.image.resize_image_with_crop_or_pad(self.images, self.width + 4, self.height + 4)
                 # 下面的这些操作为原始图像添加了很多不同的distortions，扩增了原始训练数据集
                 self.images = self.distort_resize(padded_image, self.height, self.width, self.channels)
-
             if standardization:
                 # 数据集标准化操作：减去均值 + 方差标准化
                 self.images = tf.image.per_image_standardization(self.images)
-
             self.one_hot_labels = tf.one_hot(self.labels, depth=self.num_label, axis=1, dtype=tf.float32)
-            outputs = self.build_arch(self.images)
+        outputs = self.build_arch(self.images)
 
-            if is_training:
+        if is_training:
+            with tf.name_scope("Loss"):
                 self.loss = self.build_loss((self.images, self.one_hot_labels), outputs)
-
+            with tf.name_scope("Optimizer"):
                 self.global_step = tf.Variable(1, name='global_step', trainable=False)
                 self.optimizer = tf.train.AdamOptimizer()
                 self.train_op = self.optimizer.minimize(self.loss, global_step=self.global_step)
 
-            with tf.variable_scope('accuracy'):
-                activations_idx = tf.to_int32(tf.argmax(tf.nn.softmax(outputs['activations'], axis=1), axis=1))
-                correct_prediction = tf.equal(tf.to_int32(self.labels), activations_idx)
-                self.accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
-                self.summary('scalar', 'accuracy', self.accuracy)
-
-            self.merged_summary = tf.summary.merge(self.summary_arr)
+        with tf.variable_scope('accuracy'):
+            activations_idx = tf.to_int32(tf.argmax(tf.nn.softmax(outputs['activations'], axis=1), axis=1))
+            correct_prediction = tf.equal(tf.to_int32(self.labels), activations_idx)
+            self.accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+            self.summary('scalar', 'accuracy', self.accuracy)
+        self.merged_summary = tf.summary.merge(self.summary_arr)
 
     @abc.abstractclassmethod
     def build_arch(self, image):

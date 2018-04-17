@@ -7,7 +7,7 @@ from six.moves import urllib
 import tensorflow as tf
 
 
-tf.app.flags.DEFINE_string('dir', 'data/mnist', 'directory')
+tf.app.flags.DEFINE_string('dir', 'data_input/data/mnist', 'directory')
 tf.app.flags.DEFINE_string('dataset', 'mnist', 'mnist or fashion-mnist')
 tf.app.flags.DEFINE_bool('force', False, 'rewrite or not')
 FLAGS = tf.app.flags.FLAGS

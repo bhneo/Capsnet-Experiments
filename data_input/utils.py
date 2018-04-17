@@ -22,7 +22,7 @@ def create_train_set(dataset, handle, batch_size=128, n_repeat=-1):
 
 
 def create_test_set(dataset, batch_size=128):
-    te_image, te_label, num_label, num_batch = load_data(dataset, is_training=False)
+    te_image, te_label, num_label, num_batch = load_data(dataset, batch_size, is_training=False)
     te_data_set = tf.data.Dataset.from_tensor_slices((te_image, te_label)).batch(batch_size)
     return te_data_set.make_one_shot_iterator().get_next(), num_label, num_batch
 
@@ -67,7 +67,7 @@ def load_cifar10(batch_size, is_training=True, valid_size=0.1):
         labels, images = extract_cifar(files)
 
         indices = np.random.permutation(50000)
-        valid_idx, train_idx = indices[:50000 * valid_size], indices[50000 * valid_size:]
+        valid_idx, train_idx = indices[:int(50000 * valid_size)], indices[int(50000 * valid_size):]
 
         batch_num = 50000 * (1 - valid_size) // batch_size
 
@@ -100,7 +100,7 @@ def load_mnist(batch_size, is_training=True):
     else:
         fd = open(os.path.join(path, 't10k-images-idx3-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
-        te_x = loaded[16:].reshape((10000, 28, 28, 1)).astype(np.float)
+        te_x = loaded[16:].reshape((10000, 28, 28, 1)).astype(np.float32)
 
         fd = open(os.path.join(path, 't10k-labels-idx1-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
@@ -132,7 +132,7 @@ def load_fashion_mnist(batch_size, is_training=True):
     else:
         fd = open(os.path.join(path, 't10k-images-idx3-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
-        te_x = loaded[16:].reshape((10000, 28, 28, 1)).astype(np.float)
+        te_x = loaded[16:].reshape((10000, 28, 28, 1)).astype(np.float32)
 
         fd = open(os.path.join(path, 't10k-labels-idx1-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
@@ -156,23 +156,6 @@ def load_data(dataset, batch_size, is_training=True):
         return load_cifar10(batch_size, is_training)
     else:
         raise Exception('Invalid dataset, please check the name of dataset:', dataset)
-
-
-def get_batch_data(dataset, batch_size, num_threads):
-    if dataset == 'mnist':
-        trX, trY, num_tr_batch, valX, valY, num_val_batch = load_mnist(batch_size, is_training=True)
-    elif dataset == 'fashion-mnist':
-        trX, trY, num_tr_batch, valX, valY, num_val_batch = load_fashion_mnist(batch_size, is_training=True)
-    elif dataset == 'smallNORB':
-        trX, trY, num_tr_batch, valX, valY, num_val_batch = load_smallNORB(batch_size, is_training=True)
-    data_queues = tf.train.slice_input_producer([trX, trY])
-    X, Y = tf.train.shuffle_batch(data_queues, num_threads=num_threads,
-                                  batch_size=batch_size,
-                                  capacity=batch_size * 64,
-                                  min_after_dequeue=batch_size * 32,
-                                  allow_smaller_final_batch=False)
-
-    return (X, Y)
 
 
 def save_images(imgs, size, path):

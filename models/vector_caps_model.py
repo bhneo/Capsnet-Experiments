@@ -14,7 +14,7 @@ class CapsNet(BaseModel):
                  lambda_val=0.5,
                  reconstruction=False,
                  regularization_scale=0.392,
-                 mask_with_y=False):
+                 mask_with_y=True):
 
         self.m_plus = m_plus
         self.m_minus = m_minus
@@ -54,17 +54,18 @@ class CapsNet(BaseModel):
         if self.reconstruction:
             # 1. Do masking, how:
             with tf.variable_scope('Masking'):
-                # Method 1.
-                if not self.mask_with_y:
+                # Method 1.masking with true label, default mode
+                if self.mask_with_y:
+                    # [128,10,16] * [128,10,1]
+                    masked_v = tf.multiply(digit_caps, tf.reshape(self.one_hot_labels, (-1, 10, 1)))
+                # Method 2.
+                else:
                     # pick out the index of max val of the 10 caps
                     # [batch_size, 10] => [batch_size] (index)
                     argmax_idx = tf.to_int32(tf.argmax(activation, axis=1))
                     argmax_idx = tf.reshape(argmax_idx, shape=(-1, 1))
-                    pre_label = tf.one_hot(argmax_idx, self.labels.get_shape().as_list()[1])
+                    pre_label = tf.one_hot(argmax_idx, self.num_label)
                     masked_v = tf.multiply(digit_caps, tf.reshape(pre_label, (-1, 10, 1)))
-                # Method 2. masking with true label, default mode
-                else:
-                    masked_v = tf.multiply(digit_caps, tf.reshape(self.labels, (-1, 10, 1)))
 
             # Decoder structure in Fig. 2
             # Reconstruct the MNIST images with 3 FC layers
@@ -88,35 +89,37 @@ class CapsNet(BaseModel):
     def build_loss(self, inputs, outputs):
         images, one_hot_labels = inputs
         activation = outputs['activations']
-        # 1. Margin loss
 
-        # max_l = max(0, m_plus-||v_c||)^2
-        max_l = tf.square(tf.maximum(0., self.m_plus - activation))
-        # max_r = max(0, ||v_c||-m_minus)^2
-        max_r = tf.square(tf.maximum(0., activation - self.m_minus))
+        with tf.name_scope("Margin_loss"):
+            # 1. Margin loss
 
-        # reshape: [batch_size, num_label, 1, 1] => [batch_size, num_label]
-        # max_l = tf.reshape(max_l, shape=(self.batch_size, -1))
-        # max_r = tf.reshape(max_r, shape=(self.batch_size, -1))
-        max_l = tf.layers.flatten(max_l)
-        max_r = tf.layers.flatten(max_r)
+            # max_l = max(0, m_plus-||v_c||)^2
+            max_l = tf.square(tf.maximum(0., self.m_plus - activation))
+            # max_r = max(0, ||v_c||-m_minus)^2
+            max_r = tf.square(tf.maximum(0., activation - self.m_minus))
 
-        # calc T_c: [batch_size, num_label]
-        # T_c = Y, is my understanding correct? Try it.
-        t_c = one_hot_labels
-        # [batch_size, num_label], element-wise multiply
-        l_c = t_c * max_l + self.lambda_val * (1 - t_c) * max_r
+            # reshape: [batch_size, num_label, 1, 1] => [batch_size, num_label]
+            # max_l = tf.reshape(max_l, shape=(self.batch_size, -1))
+            # max_r = tf.reshape(max_r, shape=(self.batch_size, -1))
+            max_l = tf.layers.flatten(max_l)
+            max_r = tf.layers.flatten(max_r)
 
-        margin_loss = tf.reduce_mean(tf.reduce_sum(l_c, axis=1))
+            # calc T_c: [batch_size, num_label]
+            # T_c = Y, is my understanding correct? Try it.
+            t_c = one_hot_labels
+            # [batch_size, num_label], element-wise multiply
+            l_c = t_c * max_l + self.lambda_val * (1 - t_c) * max_r
+
+            margin_loss = tf.reduce_mean(tf.reduce_sum(l_c, axis=1))
         self.summary('scalar', 'margin_loss', margin_loss)
 
         # 2. The reconstruction loss
         if self.reconstruction:
-            # origin = tf.reshape(images, shape=(self.batch_size, -1))
-            origin = tf.layers.flatten(images)
-            decoded = outputs['decoded']
-            squared = tf.square(decoded - origin)
-            reconstruction_err = tf.reduce_mean(squared)
+            with tf.name_scope("Reconstruct_loss"):
+                origin = tf.layers.flatten(images)
+                decoded = outputs['decoded']
+                squared = tf.square(decoded - origin)
+                reconstruction_err = tf.reduce_mean(squared)
             self.summary('scalar', 'reconstruction_loss', reconstruction_err)
 
             # 3. Total loss
